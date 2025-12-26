@@ -1,0 +1,365 @@
+---
+title: '컴파일러'
+date: '2025-12-30'
+description: '컴파일러 내용 정리'
+---
+
+# 컴파일러 개요
+컴파일러는 소스코드를 입력 받아 타겟 파일(e.g. a.out, main.exe)을 만들어주는 프로그램입니다.  
+컴파일러의 동작은 크게 2가지 프론트엔드, 백엔드로 구분이 되며  
+프론트엔드에서는 주로 코드 분석(어휘 분석, 구문 분석, 의미 분석)을 하고 백 엔드에서는 코드 생성을 합니다.  
+
+최근의 주요 C 컴파일러, Clang/LLVM은  
+clang을 통한 AST 생성 이후 Intermediate Representation (IR) 생성, LLVM이 IR을 받아서 기계어로 만들어준다고 합니다.  
+이 과정을 이해하기 위해 이 페이지에서는 주로 프론트엔드쪽, 파싱 개념에 대해 정리를 합니다.  
+
+# 문법
+## 정규 표현식 (Regular Expression)
+## 정규 문법 (Regular Grammar)
+## BNF (Backus-Naur-Form)
+### EBNF (Extended BNF)
+## 문맥 자유 문법 (Context Free Grammar)
+## 문맥 의존 문법 (Context Sensitive Grammar)\
+
+# Lex & yacc
+## Lex
+Lex는 어휘 분석을 해주는 도구입니다. 문자열을 입력 받고, 정의된 패턴에 따라 속성이 포함된 토큰을 반환해줍니다.  
+즉, 문자열을 토큰이라는 객체로 구분해 인식할 수 있게 해주는 도구입니다.  
+| 구분 | 설명 |
+|------|------|
+| Token  | 특정 속성을 띄는 단어의 집합(e.g. ID(식별자), NUM(수)) |
+| Lexeme | 토큰이 가지고 있는 실제 값(e.g. lexeme "123" => token NUM) |
+| Pattern | 정규 표현식에 의해 정의된 토큰의 형식(e.g. [a-z], [123]+)|
+
+lex 파일 예시
+```lex
+%{
+#include <stdlib.h>
+#include "y.tab.h"
+%}
+
+//declarations 토큰 선언 
+digit   [0-9]
+alpha   [a-zA-Z]
+symbol  [-+*/%=]
+
+%%
+//translation rules 토큰 패턴 정의
+{digit}+        { yylval.ival = atoi(yytext); return NUM; }
+{alpha}+        { yylval.sval = strdup(yytext); return VAR; }
+{symbol}        { yylval.sval = strdup(yytext); return SYM; }
+.               { fprintf(stderr, "'%c' illegal\n", yytext[0]); exit(1); }
+%%
+//auxiliary procedures 추가적인 함수(유틸리티)
+int yywrap() { return 1; }
+```
+### lex 컴파일 및 실행
+`flex token.l`  `gcc lex.yy.c -ll` `./a.out`
+
+### 간단한 lex 예제
+```lex
+%%
+. ECHO;
+%%
+int main() {
+yylex();
+return 0;
+}
+int yywrap() {
+return 1;
+}
+```
+입력 받은 문자열을 그대로 출력하는 예제 프로그램입니다. 
+
+## Yacc
+Yacc는 구문 분석을 해주는 도구입니다. lex가 반환한 토큰을 기반으로 정의된 문법 규칙을 수행합니다.  
+yacc 파일 예시
+```yacc
+// declarations 선언부
+%{
+#include <stdio.h>
+#include <ctype.h>
+int yylex();
+void yyerror(const char *s);
+%}
+%token NUM
+
+%%
+// translation rules 문법 규칙
+Exp : Exp '+' Exp { puts("E -> E + N"); }
+| NUM { puts("E -> N"); }
+;
+%%
+
+// auxiliary procedures 추가적인 함수(유틸리티)
+int main() { yyparse(); return 0; }
+void yyerror(const char *msg) { fputs(msg, stderr); }
+int yylex() { char c=getchar(); return (c=='\n')?0:isdigit(c)?NUM:c; }
+```
+단순히 패턴 매칭에 따라 문법을 인식하는 예제입니다.  
+
+### yacc 컴파일 및 실행
+`bison grammar.y` `gcc y.tab.c` `./a.out`
+
+### Attribute Grammer
+```yacc
+// 괄호 깊이 구하는 yacc 예제 일부 Parenthesis depth
+%%
+Line : S { printf("max depth = %d \n", $1); }
+;
+S : '(' S ')' S { $$ = max($2 + 1, $4); }
+| { $$ = 0; }
+;
+%%
+```
+문법 표현식에서 $$(lvalue), $n과 같은 기호를 써서 해당 대상의 값을 사용할 수 있습니다
+|Rule No.|Grammar Rules|Attribute Evaluation Rules|
+|-|-|-|
+|1|S -> ( S_1 ) S_2 | S.d = max\{S_1.d + 1, S_2.d \} |
+|2| S -> e | S.d = 0 |
+
+# Parse Tree
+파스 트리는 코드 분석을 하면서 사용되는 자료구조로 크게 2가지 종류 CST, AST가 있습니다.  
+CST 구문 분석 트리는 구문 기반으로 파싱이 돼 사람이 문법과 함게 인식하기에 편합니다만 불필요한 문법요소가 포함되어 활용하기 어렵다는 단점이 있습니다.  
+AST는 연산자가 루트노드가 되는 트리로 코드생성에 사용하기 좋습니다. 
+## 분석 예시
+예시 문법, =, +, *, () 연산이 있는 구문  
+```c
+S -> ID = E;
+E -> E + T 
+  | T;
+T -> T * F
+  | F;
+F -> ID | NUM | (E);
+```
+예시 코드 sum = sum + (a * 2)
+```c
+S => ID = E;
+  => ID = E + T;
+  => ID = T + T;
+  => ID = F + T;
+  => ID = ID + T;
+  => ID = ID + F;
+  => ID = ID + (E);
+  => ID = ID + (T);
+  => ID = ID + (T * F);
+  => ID = ID + (F * F);
+  => ID = ID + (ID * F);
+  => ID = ID + (ID * NUM);
+```
+## Concrete Systax Tree 상세 구문 트리
+```text
+S
+├─ ID("sum")
+├─ '='
+├─ E
+│  ├─ E
+│  │  └─ T
+│  │     └─ F
+│  │        └─ ID("sum")
+│  ├─ '+'
+│  └─ T
+│     └─ F
+│        ├─ '('
+│        ├─ E
+│        │  └─ T
+│        │     ├─ T
+│        │     │  └─ F
+│        │     │     └─ ID("a")
+│        │     ├─ '*'
+│        │     └─ F
+│        │        └─ NUM("2")
+│        └─ ')'
+└─ ';'
+```
+## Abstract Synstax Tree 추상 구문 트리
+```text
+sum = sum + (a * 2);
+
+        =
+       / \
+    sum   +
+         / \
+      sum   *
+           / \
+          a   2
+```
+AST는 연산자 기반으로 표현돼 CST보다 훨씬 정돈된 형태를 띄고 코드 생성을 하기 위한 자료구조로 사용하기도 편합니다.  
+
+AST 구현 방식
+```c 
+typedef struct _Node{
+    NKind Kind; // 노드 종류 태그
+    union {} val; // 노드 값 
+    struct _node *bro, *son; // son은 자신 노드에 사용되는 operand들 bro는 자신의 윗 노드가 연산에 사용하는 operand
+} *Tree;
+```
+최상위 노드가 트리의 루트노드가 되어 재귀적으로 노드 연산이 되는 양상을 띕니다.  
+노드가 요구하는 연산자 수에 따라 son 및 연결리스트 형태로 bro가 연결되어 n개의 operand가 형성됩니다. 
+```c
+// sum = sum + (a * 2);
+-----
+| = |
+-----
+  |
+-------     -----
+| sum |  -  | + |   
+-------     -----
+              |
+            -------   -------
+            | sum | - |  *  |
+            -------   ------- 
+                         |
+                       -----     -------
+                       | a |  -  |  2  |
+                       -----     -------
+```
+## LISP 스타일 AST
+lisp는 일반화 리스트를 이용해 문법이 표현됩니다
+```lisp
+// sum = sum + (a * 2);
+(= . (sum . ((+ . (sum . ((* . (a . (2 . nil))) . nil))) . nil)))
+=> 보기 편하게 하면
+=> (= . (sum . (addNode . nil)))  sum은 첫 번째 피연산자, addNode는 두 번째 피연산자
+addNode => (+ . (sum . (mulNode . nil)))  sum은 첫 번째 피연산자 mulNode는 두 번째 피연산자
+mulNode => (* . (a . (2 . nil)))
+// 트리 시각화
+                           .
+                         /   \
+                        =     .
+                             / \
+                          sum   .
+                               / \
+                              .   nil
+                            /   \
+                           +     .
+                                / \
+                            sum    .
+                                  / \
+                                .   nil
+                               / \
+                              *   .
+                                 / \
+                                a   .
+                                   / \
+                                  2   nil
+// 다른 시각화
+.   -   .   -   .   -   nil
+=       sum     |
+                .   -   .   -   .   -   nil
+                +       sum     |
+                                .   -   .   -   .   -   nil
+                                *       a       2                       
+```
+이런 재귀적인 파싱 트리 구조로 언어가 동작한다는 것을 알 수 있습니다. 
+
+# Parsing
+
+주요 파싱 방법
+| |Top-Down|Bottom-Up|
+|-|-|-|
+|Table-Driven|LL Parsing|LR Parsing<br/>(Shift-Reduce Parsing)|
+|Hard-Wired|Recursive-Descent| |
+
+## Hard-Wired
+현대 대부분 파서가 이 방식이라던데 제대로 알지는 못합니다. 
+생략
+
+## LL(1) Parsing
+테이블 기반으로 top-down 파싱하는 기법입니다. Stack에 현재 맥락을 담고, Input으로 코드 입력을 받으면서 테이블에 매칭해 들어온 코드가 정의된 문법에 알맞은지 확인합니다.  
+e.g. LL(1) 테이블 파싱 예시  
+| | + | * | ( | id | ) | $ |
+|-|---|---|---|----|---|---|
+|E| | | E -> T E` | E -> T E` | | |
+|E`|E\` -> + T E` | | | | E` -> ε | E` -> ε |
+|T| | | T -> F T` | T -> F T` | | |
+|T`| T` -> ε | T\` -> * F T` | | | T` -> ε | T` -> ε |
+|F| | | F -> ( E ) | F -> id | | | 
+
+stack 시작: \$E .   input: id+id\$  .
+과정)  
+| Step | Stack (top → right) | Input | Action |
+|------|---------------------|-------|--------|
+| 1 | $ E | id + id $ | E → T E` |
+| 2 | $ E\` T | id + id $ | T → F T` |
+| 3 | $ E\` T` F | id + id $ |F → id  |
+| 4 | $ E\` T` id | id + id $ | id match! |
+| 5 | $ E\` T` | + id $ | T` → ε |
+| 6 | $ E\` | + id $ | E\` → + T E` |
+| 7 | $ E\` T + | + id $ | + match! |
+| 8 | $ E\` T | id $ | T → F T` |
+| 9 | $ E\` T` F | id $ | F → id |
+| 10 | $ E\` T` id | id $ | id 매칭 |
+| 11 | $ E\` T` | $ | T` → ε |
+|12 | $ E\` | $ |  E` → ε |
+|13 | $ | $ | accept |
+
+파싱 방법: Stack의 맨 위 심볼 - input의 앞 심볼에 맞추어 테이블을 참조합니다. 만약에 해당 셀이 빈 칸, null이면 파싱 실패입니다.  
+해당 셀이 Action이 되어 변환 Output을 Stack에 역순으로 담습니다(e.g. E -> T E\` => Stack에 E\` T 추가)
+만약 output이 단말기호라면 match가 되어 해당 두 심볼을 제거합니다. 이를 반복하다가 stack과 input에 $ $만 남아 accept가 되면 파싱 성공이고 입력 코드가 올바른 문법이라는 겁니다.   
+
+### LL(1) 테이블 만들기
+#### First 
+| Grammar | pass 1 | pass 2 | pass 3 | pass 4 |
+|-|-|-|-|-|
+| E -> T E` | | | FIRST(E) = FIRST(T) = \{ (, id \} | | 
+| E\` -> + T E`  | FIRST(E\`) = \{ + \} | 
+| E\` -> ε | FIRST(E\`) = \{ +, ε \} |
+| T -> F T` | | FIRST(T) = FIRST(F) = \{ (, id \} |
+| T\` -> * F T` | FIRST(T\`) = \{ * \} |
+| T\` -> ε | FIRST(T\`) = \{ *, ε \} |
+| F -> ( E ) | FIRST(F) = \{ ( \} |
+| F -> id | FIRST(F) = \{ (, id \} | | | 0 change, completed | 
+
+=> FIRST(E) = \{ (, id \}, FIRST(E\`) = \{ + \}, FIRST(T) = \{ (, id \}, FIRST(T\`) = \{ *, ε \}, FIRST(F) = \{ (, id \} 
+
+#### FOLLOW
+규칙:
+  시작기호 S에 대한 FOLLOW = \{\$\}, 나머지 비단말기호들, FOLLOW(A) = \{\}로 시작  
+  문법 규칙 A -> X_1 X_2 ... X_n에 대하여 
+    FOLLOW(X_i) = FOLLOW(X_i) and FIRST(X_(i+1) ... X_n) - ε
+    if(All of FIRST(X_i+1 .. X_n) inlcude ε)
+      FOLLOW(X_i) = FOLLOW(X_i) and FOLLOW(A);
+즉, 문법 규칙에서 비단말 하나의 FOLLOW는, 그 뒤의 비단말들의 FIRST 합 및 만약에 그 뒤의 모든 비단말들의 FIRST가 입실론을 포함한다면 FOLLOW(A)까지 포함된다. 
+
+FOLLOW 구하는 과정 생략, 나중에 추가
+
+**결과:**
+- FOLLOW(E) = \{ ), $ \}
+- FOLLOW(E\`) = \{ `)`, `$`\}
+- FOLLOW(T) = \{ `+`, `)`, `$`\}
+- FOLLOW(T\`) = \{ `+`, `)`, `$`\}
+- FOLLOW(F) = \{ `*`, `+`, `)`, `$`\}
+
+#### 테이블 생성
+생략  
+만약에 테이블 하나의 셀에 여러개 생성규칙이 들어가면 해당 문법에 대응되는 테이블 생성 실패  
+=> 하나의 비단말에 대해 2개의 생성규칙이 있을 때 걔네들의 FIRST가 겹치면 안 됨.  
+하나의 생성규칙이 입실론이 포함되어 FOLLOW(LVAL)를 참조해야할 때 해당 비단말의 FOLLOW도 해당 비단말의 생성규칙 FIRST들에 겹치면 안 됨  
+
+
+**요약**  
+FIRST: 해당 비단말 기호에 대한 생성규칙에 의해 직후에 나올 수 있는 단말 기호 집합 구하기.  
+FOLLOW: 따라오는 단말 구하기. 뒤 비단말들의 FIRST 포함. 만약에 뒤의 FIRST가 모두 입실론 포함하면 LVALUE의 FOLLOW 포함  
+TABLE: 해당 생성규칙의 FIRST를 구하고서 해당 FIRST들에 생성규칙으로 셀 채우기. FIRST에 입실론 있으면 FOLLOW 따라 셀 채우기
+
+## LR Parsing
+테이블 기반으로 button-up 파싱하는 기법입니다.
+
+# Code Generation
+
+# 데이터베이스 임시
+db api
+```c
+cursor(iterator)
+tier system
+conn, statement, Drivermanager, execQuery, getRsultSet(), result.next(), result.getstring(colname | colIndex), 
+first, last, next, previous, absolute, // result(cursor, iterator) 탐색
+prepare statement // 미리 SQL 작성해두고 내부에 ? 박아두고서 사용할 때 포맷
+
+
+// 인덱스 구조 - 보통 B+ 트리
+// 클러스티드 - B+ 트리 리프노드가 시퀀셜하게 배열 리스트로 돼 있음 -> 인덱스 기반으로 범위기반 접근이 빨라짐 
+// 논클러스티드 - 트리 분류에 의해 범위기반으로 접근 자체는 되는데 마지막 리프노드 접근할 때 메모리를 띄엄띄엄 접근하게 됨 
+
+// ER 모델

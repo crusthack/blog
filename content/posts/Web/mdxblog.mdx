@@ -1,0 +1,2173 @@
+---
+title: 'mdx 블로그 만들기'
+date: '2025-12-22'
+description: 'Nextjs를 이용한 mdx 블로그 제작 및 깃허브 액션 배포'
+---
+
+> Nextjs 프레임워크를 활용해, mdx 파일을 파싱하여 페이지를 만드는 정적 웹사이트 만들고 깃허브 페이지 액션을 통해 배포하는 프로젝트입니다.
+
+# Nextjs mdx 블로그란?
+- Nextjs란 React를 활용한 반응형 웹 페이지를 서비스하는 웹사이트를 쉽게 만들게 해주는 프레임워크입니다. 
+빌드시에 정적 페이지를 미리 만들어두어 서버 부하를 덜고 빠른 서비스가 가능하게 해준다는 장점이 있습니다.  
+
+- mdx는 md파일에서 jsx 문법을 사용하게 해주는 파일 확장자입니다. 기존의 마크다운 형식보다 더 다양한 표현이 가능합니다.  <br/><br/>
+
+- 블로그는 보통 작성자 개인이 일방적으로 글을 작성하여 자신이 학습한 내용을 정리하고 사람들에게 전파한다는 특징이 있습니다. 
+이 때문에 작성자 본인이 글을 작성하고 배포하는 데에 불편한 점이 없다면 블로그가 정적사이트로 운용되어도 문제가 없습니다. 
+
+- nextjs를 활용한 mdx 블로그는 nextjs의 정적사이트 서비스 기능 및 라우팅 기능을 활용하여 개발자가 작성한 mdx 파일을 하나의 블로그 포스트로써 서비스하는 블로그입니다. 
+
+- 개발자가 직접 웹 사이트를 구성함으로써 높은 자유도를 가지고, 마크다운 형식으로 글을 작성하기에 개발자에게 익숙하고 편리한 글 작성이 가능하며 온전히 통제 가능하다는 장점이 있습니다. 
+
+- GitHub Pages를 통해 무료로 인터넷에 배포를 합니다. 깃허브 액션에서 Next.js 프로젝트를 자동으로 배포하는 설정이 있기 때문에 무료이면서 안정적인 환경에서 배포가 가능합니다. 
+- 블로그에서 사람들과 소통을 하게 해주는 댓글 기능도 깃허브의 Issues를 활용하여 댓글로 사용을 할 수 있습니다. (현재는 구현 계획 없음) 
+
+# 0. 참조 사이트
+[Nextjs 공식 가이드](https://nextjs.org/docs/app/guides/mdx)  
+[부산대학교 웹 수업 자료](https://sangkon.com/practice-ts/slides/practice02.html)
+
+# 1. Next.js 프로젝트 mdx 기본 설정
+
+## 1-1. Nextjs 프로젝트 초기화
+```terminal
+npx create-next-app@latest blog --yes
+cd ./blog 
+code .
+```
+- --yes설정을 넣으면 기본설정에 의해 프로젝트가 자동으로 구성됩니다.
+
+## 1-2. mdx 패키지 설치
+```terminal
+npm install @next/mdx @types/mdx gray-matter next-mdx-remote
+```
+
+## 1-3. next.config.ts 설정(생략가능)
+```ts
+// /next.config.ts
+import createMDX from '@next/mdx'
+ 
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Configure `pageExtensions` to include markdown and MDX files
+  pageExtensions: ['js', 'jsx', 'md', 'mdx', 'ts', 'tsx'],
+  // Optionally, add any other Next.js config below
+}
+ 
+const withMDX = createMDX({
+  // md 확장자 포함 설정
+  extension: /\.(md|mdx)$/,
+})
+ 
+// Merge MDX config with Next.js config
+export default withMDX(nextConfig)
+```
+
+## 1-4. mdx-components.tsx 작성(생략가능)
+```ts
+// /mdx-components.tsx
+import type { MDXComponents } from 'mdx/types'
+ 
+const components: MDXComponents = {}
+ 
+export function useMDXComponents(): MDXComponents {
+  return components
+}
+```
+
+## 1-5. mdx 유틸리티 함수 작성
+
+### a. mdx 포스트 구조 설계하기
+- mdx 파일을 이용한 블로그를 제작한다면, 1차적으로는 단순히 mdx파일의 제목만을 가지고 활용을 하게 됩니다. 이런 방식을 사용한다면, 한 폴더에 수많은 포스트 글들이 몰리게 돼 포스트를 분류/수정하기 힘듭니다. 
+- 폴더 방식으로 mdx파일들을 분류하고 폴더 명을 카테고리 이름으로 사용해 다루기 편하게 만듭니다. /content/posts/Web/blog.mdx => Web 카테고리의 blog 포스트
+```ts
+// mdx 파일 타입 
+export interface Post {
+  category: string    // 상위 폴더명
+  slug: string        // 파일명
+  title: string       // 파일 안에서 메타데이터 설정 
+  date: string        // ``
+  description: string // ``
+ 
+  content: string     // 포스트 본문
+}
+```
+
+### b. 유틸리티 함수 작성
+
+- `walkDir` - 디렉토리 탐색하면서 mdx 파일 경로 수집
+- `loadPosts` - 전체 mdx 파일 읽고서 해시맵에 캐싱, `cachedPostsData: Map<string, Post[]>`
+- `getAllPostsData` - 전체 mdx 파일들에 대한 메타데이터 get 함수(포스트 내용 제외)
+- `getPostsByCategory` - 특정 카테고리에 대한 mdx파일들 메타데이터 get 
+- `getPostData` - 카테고리와 슬러그(파일제목)을 통해 포스트 내용 get   
+
+`/lib` 폴더에 작성
+```ts
+// /lib/posts.ts
+import fs from 'fs'
+import path from 'path'
+import matter from 'gray-matter'
+ 
+const postsDirectory = path.join(process.cwd(), 'content/posts')
+ 
+export interface Post {
+  category: string
+  slug: string
+  title: string
+  date: string
+  description: string
+ 
+  content: string
+}
+ 
+function walkDir(dir: string, fileList: string[] = []) {
+  const parent = path.dirname(dir);
+  const targetName = path.basename(dir);
+ 
+  const realEntries = fs.readdirSync(parent, { withFileTypes: true });
+  const realMatch = realEntries.find(
+    (entry) => entry.isDirectory() && entry.name === targetName
+  );
+ 
+  const realDir = realMatch ? path.join(parent, realMatch.name) : dir;
+ 
+  const files = fs.readdirSync(realDir);
+ 
+  files.forEach((file) => {
+    const fullPath = path.join(realDir, file);
+ 
+    if (fs.statSync(fullPath).isDirectory()) {
+      walkDir(fullPath, fileList);
+    } else if (file.endsWith(".mdx")) {
+      fileList.push(fullPath);
+    }
+  });
+ 
+  return fileList;
+}
+ 
+const cachedPostsData: Map<string, Post[]> = new Map();
+let isCacheLoaded = false;
+ 
+function loadPosts(): void {
+  if (isCacheLoaded) return;
+  if (!fs.existsSync(postsDirectory)) return;
+  cachedPostsData.clear();
+ 
+  const filePaths = walkDir(postsDirectory);
+ 
+  for (const fullPath of filePaths) {
+    const fileContents = fs.readFileSync(fullPath, "utf8");
+    const { data, content } = matter(fileContents);
+ 
+    const slug = path.basename(fullPath).replace(/\.mdx$/, "");
+    const category = path.basename(path.dirname(fullPath)) === "posts" ?
+      "" : path.basename(path.dirname(fullPath));
+ 
+    const post: Post = {
+      category,
+      slug,
+      title: data.title,
+      date: data.date,
+      description: data.description,
+      content: content
+    };
+ 
+    if (!cachedPostsData.has(category)) {
+      cachedPostsData.set(category, []);
+    }
+ 
+    cachedPostsData.get(category)!.push(post);
+  }
+ 
+  // 각 카테고리별로 날짜 내림차순 정렬
+  for (const [category, posts] of cachedPostsData) {
+    posts.sort(
+      (a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }
+ 
+  isCacheLoaded = process.env.NODE_ENV === 'production';
+}
+ 
+export function getAllPostsData(): Omit<Post, "content">[] {
+  if(!isCacheLoaded) {
+    loadPosts();
+  }
+ 
+  const allPostsData = Array.from(cachedPostsData.values()).flat().map((post) => {
+    const slug = post.slug;
+    const category = post.category; // 바로 상위 폴더 이름
+    
+    if(category === "") return; // posts 폴더 직속 파일 무시
+    
+    return {
+      category: category, // 상위 폴더명을 카테고리로 사용
+      slug,               // 파일명
+      title: post.title,  // 포스트 제목
+      date: post.date,    // 작성일
+      description: post.description, // 포스트 설명
+    };
+  }).filter(Boolean) as Omit<Post, "content">[];
+ 
+  return allPostsData.sort((a, b) => (a.date < b.date ? 1 : -1));
+}
+ 
+// 카테고리 기반 글 메타데이터 불러오기
+export function getPostsByCategory(category: string): Omit<Post, "content">[] {
+  if(!isCacheLoaded) {
+    loadPosts();
+  }
+ 
+  const postsInCategory = cachedPostsData.get(category);
+  if (!postsInCategory) {
+    return [];
+  }
+ 
+  return postsInCategory;
+}
+ 
+// 파일명 기반으로 content/{slug}.mdx 파일 가져오기
+export function getPostData(category: string, slug: string): Post | null {
+  if(!isCacheLoaded) {
+    loadPosts();
+  }
+  const postsInCategory = cachedPostsData.get(category);
+  if (!postsInCategory) {
+    return null;
+  }
+  const post = postsInCategory.find((post) => post.slug === slug);
+  if (!post) {
+    return null;
+  }
+ 
+  return post;
+}
+```
+
+### c. 임시 mdx파일 작성
+- 루트디렉토리에 content 폴더를 작성하고서 `/content/posts/temp/temp.mdx` 파일을 작성합니다. 
+- (vs code에서 새파일 - content/posts/temp/temp.mdx 입력하면 알아서 디렉토리까지 만들어줌)
+```mdx
+---
+title: 'temp'
+date: '2025-12-23'
+description: '임시 포스트입니다'
+---
+>  인용문
+\# 임시 페이지입니다 
+\## h2 태그
+- ㅇㅅㅇ
+```c
+printf("hello, world!!");
+```
+
+## 1-6. 페이지 렌더링 /app/[category]/[slug]/page.tsx
+***동적 세그먼트를 활용하여 카테고리/제목 기반 라우팅 구조를 사용합니다**
+```ts
+//  /app/[category]/[slug]/page.tsx
+import { getPostData } from '@/lib/posts'
+import { MDXRemote } from 'next-mdx-remote/rsc'
+import { notFound } from 'next/navigation';
+ 
+export default async function Post({ params }: { params: Promise<{ category: string, slug: string }> }) {
+  const { category, slug } = await params
+  
+  const postData = getPostData(category, slug)
+
+  if(!postData) {
+    return notFound();
+  }
+ 
+  return (
+      <div className="markdown-body">
+        <MDXRemote
+          source={postData.content}
+          options={{
+            mdxOptions: {
+              remarkPlugins: [],
+              rehypePlugins: [],
+            },
+          }}
+        />
+      </div>
+  )
+}
+```
+
+## 1-7. 개발 환경에서 동작 확인
+- `npm run dev`를 실행하고 로컬호스트로 접속하여 페이지가 잘 동작하는지 확인합니다.  
+- `http://localhost:3000/temp/temp` (3000번 포트는 nextjs 기본 설정, 환경에 따라 다를 수 있음)
+- 따로 css를 설정해둔게 없어서 plain html로 뜨는 상태입니다. 
+- 이로써, mdx파일을 작성한 후, 메타데이터를 분석 가능하고 페이지에서 내용을 불러올 수 있습니다. 
+
+```html
+<div class="markdown-body"><blockquote>
+<p>인용문</p>
+</blockquote>
+<h1>임시 페이지입니다</h1>
+<h2>h2 태그</h2>
+<ul>
+<li>ㅇㅅㅇ</li>
+</ul></div>
+```
+
+mdxremote가 자동으로 마크다운 양식에 따라 blockquote, h1 h2, ul.. 태그들을 만들어줍니다.  
+이에 대해 github css를 적용헤 깃허브에서 README파일을 보던 것처럼 같은 스타일로 보이게 할 것입니다.  
+
+## 1-9 github css 적용
+***github css 패키지 설치***
+```terminal
+npm install github-markdown-css
+```
+```ts
+// /app/layout.tsx
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+// 상단 import문에 github css 추가
+import 'github-markdown-css/github-markdown-light.css'
+```
+
+## 1-10 현재 프로젝트 폴더 구조
+```terminal
+blog
+├──app              // 앱 라우팅 폴더
+|  ├──layout.tsx
+|  ├──global.css
+│  └── [category]         
+|      └── [slug]   
+|          └── page.tsx   
+|
+|──content          // mdx 폴더
+|  └── temp         // temp 카테고리
+|      └── temp.mdx // temp 포스트
+├──lib
+|  └──posts.ts      // mdx 불러오는 유틸리티 
+├──next.config.ts   // nextjs 설정
+...
+
+```
+
+# 2. 블로그 스타일링
+
+## 2-1. 블로그 포스트 컨테이너 컴포넌트 추가
+상단에 포스트 메타데이터 title, date를 표시하고, 회색 배경을 만들어주는 컨테이너 컴포넌트를 만들어줍니다. 
+```ts
+// components/BlogPost.tsx
+import type { Post } from '@/lib/posts';
+import { MDXRemote } from 'next-mdx-remote/rsc'
+
+interface BlogPostProps {
+  post: Post
+}
+
+export default function BlogPost({ post }: BlogPostProps) {
+  return (
+    <article className="w-full bg-gray-100 p-4 rounded-md">
+
+      {/* 제목/날짜 */}
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">{post.title}</h1>
+        <time className="text-gray-500">{post.date}</time>
+
+        <p className="mt-3 text-lg text-gray-600 leading-relaxed max-w-prose">
+          {post.description}
+        </p>
+      </header>
+
+
+      {/* 본문 전체 레이아웃 (flex + markdown-body) */}
+      <div className="bg-gray-100">
+        <div className="!bg-gray-100 p-6 rounded-md">
+
+          {/* markdown 본문 */}
+          <div className="markdown-body !bg-gray-100">
+                <MDXRemote
+                    source={post.content}
+                />
+          </div>
+
+        </div>
+      </div>
+
+    </article>
+  );
+}
+```
+
+## 2-2. 레이아웃 설정
+- 현재 mdx파일 내부에서 직접적으로 카테고리를 지정하는 방식을 사용하고 있습니다. 
+```mdx
+---
+category: 'temp'
+title: 'temp'
+date: '2025-12-23'
+---
+```
+
+- 저는 블로그 글을 카테고리-포스트제목 방식으로 작성을 할 것이고 그렇다면 모든 mdx 파일을 하나의 디렉토리에 모아두는 것이 아닌, 카테고리별로 폴더를 만들어 관리하는 것이 유용합니다.
+- 이를 위해 파일시스템을 직접적으로 탐색하면서 폴더 기반 카테고리 시스템을 구현할 것입니다.
+
+***mdx 포스트 디렉토리 구조***
+```terminal
+content
+├──posts              // mdx 파일 담아두는 폴더
+   ├──category0
+   ├──category1
+   └──category2       
+   |   └──index.mdx   // category=category2, slug=index
+   └──index.mdx       // 카테고리 없는 특수 페이지
+```
+
+### a. 정적 라우팅 파라미터 함수 추가 및 스타일링
+정적 사이트 배포시에 빌드타임에 페이지를 미리 컴파일해 제공할 수 있는 generateStaticParams를 사용합니다 
+```ts
+//  `app/[category]/[slug]/page.tsx`
+import { getPostData, getAllPostsData } from '@/lib/posts'
+import BlogPost from '@/components/BlogPost';
+import { notFound } from 'next/navigation';
+
+export async function generateStaticParams() {
+  const posts = getAllPostsData();
+  return posts.map((post) => ({
+    category: post.category,
+    slug: post.slug,
+  }));
+}
+
+export default async function Post({ params }: { params: Promise<{ category: string, slug: string }> }) {
+    const { category, slug } = await params
+
+    const postData = getPostData(category, slug);
+    if(postData === null){
+        return notFound();
+    }
+
+    return (
+        <div className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+            <div>
+            </div>
+
+            {/* 중앙 콘텐츠 */}
+            <div className="w-full mx-auto Markdown-body">
+                <BlogPost post={postData}/>
+            </div>
+
+            <div>
+            </div>
+        </div>
+    )
+}
+```
+
+### b. Navigation 컴포넌트
+
+- 웹페이지 상단에 표시한 네비게이션 컴포넌트를 작성합니다.  
+- 메인 인덱스 페이지로 이동할 수 있느 링크와 현재 작성되어진 문서들을 볼 수 있는 드롭다운이 필요합니다.  
+- 이를 위해 컴포넌트가 포스트 카테고리 목록을 받아 표시할 수 있도록 합니다.  
+```ts
+// /components/Navigation.tsx
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
+export default function Navi({ categories }: { categories: string[] }) {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <nav className="relative w-full h-16 bg-transparent grid grid-cols-[1fr_1000px_1fr]">
+
+            <div></div>
+
+            {/* 가운데 네비 전체 */}
+            <div className="flex w-full items-center justify-between">
+
+                <div className="flex items-center justify-start px-6 gap-6">
+
+                    <Link href="/" className="flex text-xl items-center font-bold hover:opacity-70 transition">
+                        <img
+                            src="https://avatars.githubusercontent.com/u/161662653?v=4"
+                            alt="avatar"
+                            className="w-12 h-12 rounded-full"
+                        />
+                        <p>Main</p>
+                    </Link>
+                </div>
+
+                <div className="flex items-center justify-end px-6 gap-2">
+
+                    <Link
+                        href="/about"
+                        className="px-3 py-2 hover:bg-gray-200 rounded transition"
+                    >
+                        소개
+                    </Link>
+
+                    {/* 문서 드롭다운 */}
+                    <div
+                        className="relative"
+                        onPointerEnter={() => setOpen(true)}
+                        onPointerLeave={() => setOpen(false)}
+                    >
+                        <Link
+                            href={`/${encodeURIComponent(categories[0])}`}
+                            className="px-3 py-2 hover:bg-gray-200 rounded transition"
+                        >
+                            문서
+                        </Link>
+
+                        {open && (
+                            <div
+                                className="absolute mt-0 left-0 min-w-[12rem] bg-white shadow-lg rounded-md border p-2 z-50"
+                            >
+                                {categories.map((cat) => (
+                                    <Link
+                                        key={cat}
+                                        href={`/${encodeURIComponent(cat)}`}
+                                        className="block px-3 py-2 hover:bg-gray-100 w-full rounded"
+                                    >
+                                        {cat}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div></div>
+
+        </nav>
+    );
+}
+```
+
+### c. Footer
+페이지 하단에 표시할 사이트 정보 표시 컴포넌트입니다. 크게 중요한 요소는 아니라서 간략하게 만들어줍니다. 
+```ts
+// /components/Footer.tsx
+export default function Footer() {
+    return (
+        <footer className="w-full border-t mt-12 py-6 text-sm text-gray-600 bg-gray-50">
+            <div className="max-w-4xl mx-auto px-4 flex flex-col md:flex-row items-start gap-4">
+                <div className="flex flex-col items-start gap-1">
+                    <p className="font-semibold">Blog</p>
+                    <p className="text-xs text-gray-500">생각과 기록을 남기는 공간 · 업데이트 불규칙</p>
+                </div>
+
+                <div className="flex sm:flex-row items-start sm:items-center gap-4">
+                    <div>
+                        <p className="font-medium">사이트</p>
+                        <nav className="text-xs text-gray-600">
+                            <a className="hover:underline mr-3" href="/">홈</a>
+                            <a className="hover:underline mr-3" href="/about">소개</a>
+                            {/* 일지 링크 제거 */}
+                        </nav>
+                    </div>
+
+                    <div>
+                        <p className="font-medium">contact</p>
+                        <p className="text-xs text-gray-600">email: null</p>
+                    </div>
+                </div>
+
+                <div className="text-xs text-gray-500">© {new Date().getFullYear()} crusthack. All rights free.</div>
+            </div>
+        </footer>
+    );
+}
+```
+
+### d. Layout.tsx 설정
+- 만들어둔 Navi, Footer 컴포넌트가 웹사이트의 전체 페이지에서 사용되도록 레이아웃을 설정해줍니다
+- 현재 작성한 포스트가 temp/temp.mdx밖에 없어서 temp 카테고리만 나타납니다. 추가적으로 여러 카테고리(폴더)의 글을 작성하시면 화면에 표시가 됩니다.
+
+```ts
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import 'github-markdown-css/github-markdown-light.css'
+import Navi from "@/components/Navigation";
+import Footer from "@/components/Footer";
+import { getAllPostsData } from "@/lib/posts";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Create Next App",
+  description: "Generated by create next app",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  const postsData = getAllPostsData();
+  const categories = Array.from(
+    new Set(postsData.map(post => post.category))
+  )
+    .filter((category): category is string => Boolean(category))
+    .sort((a, b) => {
+      const latestA = Math.max(
+        ...postsData
+          .filter(p => p.category === a)
+          .map(p => new Date(p.date).getTime())
+      )
+
+      const latestB = Math.max(
+        ...postsData
+          .filter(p => p.category === b)
+          .map(p => new Date(p.date).getTime())
+      )
+
+      return latestB - latestA // 최신 글 있는 카테고리가 앞으로
+    })
+
+
+  return (
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <Navi categories={categories} />
+        {children}
+        <Footer />
+      </body>
+    </html>
+  );
+}
+
+```
+
+## 2-3. 블로그 구조 세부 설정
+
+```terminal
+blog
+├──app              // 앱 라우팅 폴더
+│  ├──[category]  
+|  |   ├──page.tsx  // 카테고리 라우팅 폴더, 해당 카테고리의 최신 글로 리다이렉션      
+|  |   └──[slug]   
+|  |       └──page.tsx  // /[category]/[slug] 일반 블로그 포스트 
+|  ├──about
+|  |  └──page.tsx   // /about  소개 페이지
+|  └──page.tsx      // /    index 메인 페이지
+|
+|──content          // 
+   └── posts        // mdx 파일 저장소
+       ├──index.mdx // 메인 페이지 category=''  
+       ├──about.mdx // 소개 페이지
+       ├──category0 // 카테고리 폴더
+       ├──category1
+       └──category2       
+          └──index.mdx   // category=category2, slug=index
+...
+```
+- 위와 같은 구조로 블로그 포스트를 서비스 할겁니다.
+- / 메인 페이지에서는 `/content/posts/index.mdx` 사용
+- /about/ 소개 페이지에서는 `/content/posts/about.mdx` 
+- /[category]/[slug] 일반적인 블로그 포스트 라우팅 주소입니다 `/content/posts/[category]/[slug].mdx`를 서비스합니다 
+- ***mdx 내용은 임의로 작성하세요.***
+
+### a. index 페이지 (app/page.tsx)
+```ts
+// /app/page.tsx
+// /app/page.tsx
+import { getPostData } from '@/lib/posts'
+import BlogPost from '@/components/BlogPost'
+import { notFound } from 'next/navigation';
+ 
+// MDX plugins are provided via shared options
+ 
+export default async function Post() {
+    const postData = getPostData("", 'index')
+    if (postData === null) {
+        return notFound();
+    }
+ 
+    return (
+        <div className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+ 
+            {/* 왼쪽 사이드 컨텐츠 */}
+            <div className="flex justify-end">
+            </div>
+ 
+            {/* 가운데 컨텐츠 */}
+            <div className="w-full mx-auto">
+                <BlogPost post={postData}/>
+            </div>
+ 
+            {/* 오른쪽 사이드 컨텐츠 */}
+            <div className="flex justify-start">
+            </div>
+ 
+        </div>
+ 
+    );
+}
+```
+
+### b. about 페이지
+```ts
+// /about/page.tsx
+import BlogPost from "@/components/BlogPost";
+import type { Metadata } from "next";
+import { getPostData } from "@/lib/posts";
+
+export async function generateMetadata(): Promise<Metadata> {
+    const post = getPostData("", 'about')
+    return {
+        title: post?.title ?? "소개",
+        description: post?.description ?? "소개 페이지",
+    };
+}
+
+export default async function AboutPage() {
+    const postData = getPostData("", 'about')
+    if (postData === null) {
+        return <div>존재하지 않는 포스트입니다.</div>;
+    }
+
+    return (
+        <main className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+            <div className="flex justify-end">
+            </div>
+            <div className="w-full mx-auto">
+                <BlogPost post={postData}/>
+            </div>
+            <div className="flex justify-start">
+            </div>
+        </main>
+    );
+}
+```
+
+### c. 카테고리 리다이렉션 페이지
+***해당 카테고리 포스트들의 index 페이지 먼저, index 페이지가 없다면 최신 글로 리다이렉션합니다.***
+```ts
+// /app/[category]/page.tsx
+import { getPostData, getAllPostsData } from "@/lib/posts";
+import { notFound, redirect } from "next/navigation";
+
+export async function generateStaticParams() {
+  const posts = getAllPostsData();
+  const uniqueCategories = Array.from(new Set(posts.map((post) => post.category)));
+  return uniqueCategories.map((category) => ({ category }));
+}
+
+export default async function Post({
+  params,
+}: {                                                            
+  params: Promise<{ category: string }>;
+}) {
+  const { category } = await params;
+
+  // 디코드: URL 인코딩(%20, + 등)을 공백으로 변환
+  const decodedCategory = typeof category === "string" ? 
+    decodeURIComponent(category).replace(/\+/g, " ").trim() : category;
+
+  // 카테고리 index.mdx가 있으면 우선 이동
+  const indexPost = getPostData(decodedCategory, "index");
+  if (indexPost) {
+    redirect(`/${encodeURIComponent(decodedCategory)}/index`);
+  }
+
+  // 모든 포스트 불러오기, 날짜 내림차순 정렬
+  const posts = getAllPostsData();
+  posts.sort((a, b) => (a.date < b.date ? 1 : -1));
+
+  // 해당 카테고리 포스트만 필터 (이미 날짜 내림차순 상태 유지)
+  const filtered = posts.filter((post) => post.category === decodedCategory);
+    
+  if (filtered.length === 0) {
+    return notFound();
+  }
+
+  // 가장 최근 글 slug (날짜 내림차순이므로 첫 번째)
+  const firstSlug = filtered[0].slug;
+
+  // 자동 이동 (경로 안전 인코딩)
+  redirect(`/${encodeURIComponent(decodedCategory)}/${firstSlug}`);
+}
+```
+
+## 2.3 특수 카테고리 만들기 및 설정 파일
+- 문서 카테고리에는 학습 내용 정리만 하고 싶고, 따로 프로젝트 내용을 정리한 카테고리, 일지 카테고리를 사용하려고 합니다. 
+- 똑같이 content/posts/Project/, content/posts/Journal 구조로 폴더를 둘 것이고, 해당 카테고리들이 네비게이션 바의 드롭다운에 보이지 않도록 처리해야합니다.  
+- ***content/posts/Project/, content/posts/Journal에 임의의 mdx 파일을 작성하세요***
+
+### a. config.ts 
+- 프로젝트의 설정값을 관리할 파일을 따로 만들어줍니다 
+
+```ts
+// /lib/config.ts
+// 환경 설정 파일
+export interface SpecialCategoryConfig {
+  category: string;          // category 이름 (posts.category와 동일)
+  label: string;        // 네비에 보일 이름
+}
+
+export const specialCategories: SpecialCategoryConfig[] = [
+  {
+    category: "Project",
+    label: "프로젝트",
+  },
+  {
+    category: "Journal",
+    label: "일지",
+  },
+];  
+```
+
+### b. Navigation.tsx 수정
+```ts
+// /components/Navigation.tsx
+"use client";
+
+import { Post } from "@/lib/posts";
+import { specialCategories } from "@/lib/config";
+import Link from "next/link";
+import { useState } from "react";
+
+interface NaviProps {
+  posts: Omit<Post, "content">[];
+}
+
+export default function Navi({ posts }: NaviProps) {
+  const [openMenu, setOpenMenu] = useState<Record<string, boolean>>({});
+
+  const open = (key: string) =>
+    setOpenMenu(prev => ({ ...prev, [key]: true }));
+
+  const close = (key: string) =>
+    setOpenMenu(prev => ({ ...prev, [key]: false }));
+
+  const specialKeys = specialCategories.map(sc => sc.category);
+
+  const categories = Array.from(
+    new Set(posts.map(post => post.category))
+  )
+    .filter(
+      (category): category is string =>
+        Boolean(category) && !specialKeys.includes(category)
+    )
+    .sort((a, b) => {
+      const latestA = Math.max(
+        ...posts
+          .filter(p => p.category === a)
+          .map(p => new Date(p.date).getTime())
+      );
+
+      const latestB = Math.max(
+        ...posts
+          .filter(p => p.category === b)
+          .map(p => new Date(p.date).getTime())
+      );
+
+      return latestB - latestA;
+    });
+
+  const firstCategory = categories[0] ?? "";
+
+  const postsBySpecial = new Map(
+    specialCategories.map(sc => [
+      sc.category,
+      posts.filter(p => p.category === sc.category),
+    ])
+  );
+
+  return (
+    <nav className="relative w-full h-16 bg-transparent grid grid-cols-[1fr_1000px_1fr]">
+      <div />
+
+      {/* 가운데 네비 */}
+      <div className="flex w-full items-center justify-between">
+        {/* 좌측 */}
+        <div className="flex items-center justify-start px-6 gap-6">
+          <Link
+            href="/"
+            className="flex text-xl items-center font-bold hover:opacity-70 transition"
+          >
+            <img
+              src="https://avatars.githubusercontent.com/u/161662653?v=4"
+              alt="avatar"
+              className="w-12 h-12 rounded-full"
+            />
+            <p>Main</p>
+          </Link>
+        </div>
+
+        {/* 우측 */}
+        <div className="flex items-center justify-end px-6 gap-2">
+          <Link
+            href="/about"
+            className="px-3 py-2 hover:bg-gray-200 rounded transition"
+          >
+            소개
+          </Link>
+
+          {/* 문서 드롭다운 */}
+          <div
+            className="relative"
+            onPointerEnter={() => open("docs")}
+            onPointerLeave={() => close("docs")}
+          >
+            <Link
+              href={`/${encodeURIComponent(firstCategory)}`}
+              className="px-3 py-2 hover:bg-gray-200 rounded transition"
+            >
+              문서
+            </Link>
+
+            {openMenu["docs"] && (
+              <div className="absolute left-0 min-w-[12rem] bg-white shadow-lg rounded-md border p-2 z-50">
+                {categories.map(cat => (
+                  <Link
+                    key={cat}
+                    href={`/${encodeURIComponent(cat)}`}
+                    className="block px-3 py-2 hover:bg-gray-100 rounded"
+                  >
+                    {cat}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 스페셜 카테고리 (config 기반) */}
+          {specialCategories.map(sc => {
+            const items = postsBySpecial.get(sc.category) ?? [];
+
+            return (
+              <div
+                key={sc.category}
+                className="relative"
+                onPointerEnter={() => open(sc.category)}
+                onPointerLeave={() => close(sc.category)}
+              >
+                <Link
+                  href={`/${sc.category}`}
+                  className="px-3 py-2 hover:bg-gray-200 rounded transition"
+                >
+                  {sc.label}
+                </Link>
+
+                {openMenu[sc.category] && (
+                  <div className="absolute left-0 min-w-[12rem] bg-white shadow-lg rounded-md border p-2 z-50">
+                    {items.map(post => (
+                      <Link
+                        key={post.slug}
+                        href={`/${encodeURIComponent(post.category)}/${encodeURIComponent(post.slug)}`}
+                        className="block px-3 py-2 hover:bg-gray-100 rounded"
+                      >
+                        {post.slug}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div />
+    </nav>
+  );
+}
+```
+
+### c. layout.tsx 수정
+
+```ts
+import type { Metadata } from "next";
+import { Geist, Geist_Mono } from "next/font/google";
+import "./globals.css";
+import 'github-markdown-css/github-markdown-light.css'
+import Navi from "@/components/Navigation";
+import Footer from "@/components/Footer";
+import { getAllPostsData } from "@/lib/posts";
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+export const metadata: Metadata = {
+  title: "Create Next App",
+  description: "Generated by create next app",
+};
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  const postsData = getAllPostsData();
+
+  return (
+    <html lang="en">
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+      >
+        <Navi posts={postsData} />
+        {children}
+        <Footer />
+      </body>
+    </html>
+  );
+}
+
+```
+
+# 3. MDXRemote 플러그인
+
+- MDXRemote 컴포넌트에 플러그인 옵션을 넣어줍니다
+## 3-1. 플러그인 추가
+```terminal
+npm install remark-gfm remark-math remark-toc rehype-slug rehype-katex rehype-pretty-code shiki
+```
+```ts
+// /components/BlogPost.tsx
+'use client'
+import type { Post } from '@/lib/posts';
+import { MDXRemote } from 'next-mdx-remote/rsc'
+import remarkGfm from "remark-gfm";
+import rehypeKatex from "rehype-katex";
+import rehypeSlug from "rehype-slug";
+import remarkToc from 'remark-toc';
+import rehypePrettyCode from "rehype-pretty-code";
+import remarkMath from 'remark-math';
+
+const prettyOptions = {
+  theme: "github-dark",
+  keepBackground: true,
+};
+
+interface BlogPostProps {
+    post: Post
+}
+
+export default function BlogPost({ post }: BlogPostProps) {
+    return (
+        <article className="w-full bg-gray-100 p-4 rounded-md">
+
+            {/* 제목/날짜 */}
+            <header className="mb-8">
+                <h1 className="text-3xl font-bold mb-2">{post.title}</h1>
+                <time className="text-gray-500">{post.date}</time>
+
+                <p className="mt-3 text-lg text-gray-600 leading-relaxed max-w-prose">
+                    {post.description}
+                </p>
+            </header>
+
+
+            {/* 본문 전체 레이아웃 (flex + markdown-body) */}
+            <div className="bg-gray-100">
+                <div className="!bg-gray-100 p-6 rounded-md">
+
+                    {/* markdown 본문 */}
+                    <div className="markdown-body !bg-gray-100">
+                        <MDXRemote
+                            source={post.content}
+                            options={{
+                                mdxOptions: {
+                                    remarkPlugins: [remarkGfm, remarkToc],
+                                    rehypePlugins: [[rehypePrettyCode, prettyOptions], rehypeSlug, rehypeKatex],
+                                },
+                            }}
+                        />
+                    </div>
+
+                </div>
+            </div>
+
+        </article>
+    );
+}
+```
+- `remarkPlugins`: mdx에 문법을 추가합니다. 
+  - `remarkGfm`: GitHub Flavored Markdown 문법을 추가합니다. 테이블문법(| |), 체크박스([x]), 취소선(~~~text~~~)...
+  - `remarkToc`: mdx에 특정 키워드를 작성하면(## Table of Contents) 해당 위치에 toc, 목차를 생성해줍니다. rehype-slug와 같이 사용됩니다.(따로 toc 만들거라 프로젝트에서 안 쓰임)  
+
+- `rehypePlugins`: html에 서식을 추가합니다.
+  - `rehypePrettyCode`: 코드블럭을 꾸며줍니다 (```로 감싸진 코드블럭) [공식문서](rehype-pretty-example-next.pages.dev)
+  - `rehypeSlug`: h태그(#)에 자동으로 id를 붙여줍니다. 이를 toc 만드는 데에 사용합니다
+  - `rehypeKatex`: 수식을 html로 렌더링해줍니다. remarkmath와 같이 쓰입니다
+
+## 3-2. 컴포넌트 수정, 코드블럭 복사 버튼 추가
+- ***rehypePrettyCode가 현재 코드블럭에 복사버튼을 지원 안 합니다. 복사버튼 추가를 위해 MDXRemote에 components 프로퍼티 옵션을 넣어줍니다.***
+```ts
+// /components/CodeBlock.tsx
+"use client";
+
+import { DetailedHTMLProps, HTMLAttributes, useRef, useState } from "react";
+
+const IconCopy = () => (
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+    >
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+);
+
+const IconCheck = () => (
+    <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+    >
+        <polyline points="20 6 9 17 4 12" />
+    </svg>
+);
+
+const CodeBlock = ({
+    className = "",
+    children,
+    ...props
+}: DetailedHTMLProps<HTMLAttributes<HTMLPreElement>, HTMLPreElement>) => {
+    const [isCopied, setIsCopied] = useState(false);
+    const preRef = useRef<HTMLPreElement>(null);
+
+    const handleCopy = async () => {
+        const code = preRef.current?.textContent;
+        if (!code) return;
+
+        await navigator.clipboard.writeText(code);
+        setIsCopied(true);
+        setTimeout(() => setIsCopied(false), 1200);
+    };
+
+    return (
+        <div className="relative">
+            <button
+                onClick={handleCopy}
+                aria-label="Copy code"
+                className="
+                    absolute right-3 top-3
+                    flex items-center gap-1
+                    rounded-md bg-black/60
+                    px-2 py-1 text-xs text-white
+                    hover:bg-black/80 transition
+                "
+            >
+                <span className="flex items-center">{isCopied ? <IconCheck /> : <IconCopy />}</span>
+                {isCopied ? "Copied!" : "Copy"}
+            </button>
+
+            <pre ref={preRef} {...props} className={className}>
+                {children}
+            </pre>
+        </div>
+    );
+};
+
+export default CodeBlock;
+```
+
+```ts
+// /components/BlogPost.tsx
+<MDXRemote
+    source={post.content}
+    components={{
+        pre: (props) => <CodeBlock {...props} />,
+    }}
+    options={{
+        mdxOptions: {
+            remarkPlugins: [remarkGfm, remarkToc, remarkMath],
+            rehypePlugins: [[rehypePrettyCode, prettyOptions], rehypeSlug, rehypeKatex],
+        },
+    }}
+/>
+```
+
+*동작 이해*
+```c
+printf("hello, world!!");
+```
+```html
+\```c
+printf("hello, world!!");
+\```
+=> 컴파일
+<figure data-rehype-pretty-code-figure="">
+  <pre style="background-color:#24292e;color:#e1e4e8" tabindex="0" data-language="c" data-theme="github-dark">
+    <code data-language="c" data-theme="github-dark" style="display:grid">
+      <span data-line="">
+        <span style="color:#B392F0">printf</span>
+        <span style="color:#E1E4E8">(</span>
+        <span style="color:#9ECBFF">"hello, world!!"</span>
+        <span style="color:#E1E4E8">);</span>
+      </span>
+    </code>
+  </pre>
+</figure>
+
+=> 오버라이드
+<figure data-rehype-pretty-code-figure="">
+<div class="relative">
+<button aria-label="Copy code" class="   absolute right-3 top-3   flex items-center gap-1   rounded-md bg-black/60   px-2 py-1 text-xs text-white   hover:bg-black/80 transition   ">
+// ...
+</button>
+
+<pre style="background-color:#24292e;color:#e1e4e8" tabindex="0" data-language="c" data-theme="github-dark" class="">
+// ...
+</pre>
+
+</div>
+</figure>
+
+```
+
+- 코드블럭을 컴파일하면 앞에 pre 태그가 붙어서 나오게 됩니다 
+- 이 pre 태그를 인식해서 새로운 저만의 코드블럭으로 오버라이딩 하는 것입니다.
+
+
+## 3-3. TOC(Topic-Of-Contents) 추가하기
+- rehypeSlug플러그인이 #으로 표현한 h태그에 id값을 붙여줍니다. 
+```html
+<h1 id="nextjs-mdx-블로그란">Nextjs mdx 블로그란?</h1>
+```
+- 이 h 태그에 붙어있는 id를 이용해 페이지 오른쪽에 페이지의 목차를 표시해주고 네비게이션 역할을 해주는 TOC를 만들겁니다.(파싱 자체는 mdx파일 사용)
+
+***동적 헤딩 규칙***
+1. 모든 h1 태그는 상시 보여야 함
+2. 현재 `활성화된(보고있는) 태그`가 보여야 하고, 해당 태그는 파란색으로 강조됨.  
+(`활성화된 태그`는 현재 보고 있는 창의 맨 위의 50픽셀 아래로부터 위로 올라갔을 때 제일 밑에 있는 태그임)
+3. 현재 `활성화된 태그`의 자식 태그들이 보여야 함
+4. `활성화된 태그`의 형제 태그들이 보여야 함
+5. `활성화된 태그`의 부모 태그의 형제들이 보여야 함
+6. `활성화된 태그`의 연쇄적인 부모 태그들이 보여야 함
+
+### a. parseToc.ts
+```ts
+// /lib/parseToc.ts
+import { slug } from "github-slugger";
+
+export interface TocItem {
+  level: number;
+  text: string;
+  id: string;
+  parentId: string | null;
+  topLevelId: string | null;
+}
+
+export function getTocFromMarkdown(content: string): TocItem[] {
+  const toc: TocItem[] = [];
+  const usedIds = new Map<string, number>(); // 중복 slug 카운트 저장
+
+  const headingRegex = /^(#{1,6})\s+(.*)$/gm;
+  let match;
+
+  const stack: TocItem[] = [];
+
+  while ((match = headingRegex.exec(content)) !== null) {
+    const level = match[1].length;
+    const text = match[2].trim();
+
+    let baseId = slug(text);
+    let id = baseId;
+
+    // 중복 검사 후 직접 -1, -2, -3 부여
+    if (usedIds.has(baseId)) {
+      const count = usedIds.get(baseId)! + 1;
+      usedIds.set(baseId, count);
+      id = `${baseId}-${count}`;
+    } else {
+      usedIds.set(baseId, 0); // 첫 번째 등장
+    }
+
+    const item: TocItem = {
+      level,
+      text,
+      id,
+      parentId: null,
+      topLevelId: null,
+    };
+
+    // 스택 정리
+    while (stack.length > 0 && stack[stack.length - 1].level >= level) {
+      stack.pop();
+    }
+
+    if (stack.length > 0) {
+      item.parentId = stack[stack.length - 1].id;
+      item.topLevelId = stack[0].id;
+    } else {
+      item.topLevelId = item.id;
+    }
+
+    stack.push(item);
+    toc.push(item);
+  }
+
+  return toc;
+}
+```
+### b. dynamicHeading.ts
+```ts
+// /lib/dynamicHeading.ts
+"use client";
+
+import { useState, useEffect } from "react";
+
+export function useDynamicHeading() {
+    const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const getHeadings = () =>
+            Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6")) as HTMLElement[];
+
+        const handleScroll = () => {
+            const headings = getHeadings();
+            headings.sort((a, b) => a.offsetTop - b.offsetTop);
+            const scrollTop = window.scrollY + 50;
+            let current: string | null = null;
+
+            for (const el of headings) {
+                if (!el.id) continue;
+                const top = el.offsetTop;
+                if (top <= scrollTop) current = el.id;
+            }
+
+            if (!current && headings.length > 0) {
+                current = headings.find(h => h.id)?.id ?? null;
+            }
+
+            setActiveHeadingId(current);
+        };
+
+        window.addEventListener("scroll", handleScroll);
+
+        handleScroll();
+
+        return () => {
+            window.removeEventListener("scroll", handleScroll);
+        };
+    }, []);
+
+    return activeHeadingId;
+}
+```
+### c. TOC.tsx 컴포넌트
+```ts// /components/TOC.tsx
+"use client";
+
+import { TocItem } from "@/lib/parseToc";
+import { useDynamicHeading } from "@/lib/dynamicHeading";
+
+export default function TOC({ toc }: { toc: TocItem[] }) {
+  const activeId = useDynamicHeading();
+  const activeItem = toc.find(t => t.id === activeId) || null;
+
+  const parentItem = activeItem?.parentId
+    ? toc.find(t => t.id === activeItem.parentId) || null
+    : null;
+
+  const ancestorIds = new Set<string>();
+  let cur = activeItem;
+  while (cur?.parentId) {
+    ancestorIds.add(cur.parentId);
+    cur = toc.find(t => t.id === cur!.parentId) || null;
+  }
+
+  return (
+    <aside className="sticky top-20 h-fit max-h-[80vh] overflow-auto">
+      <h3 className="font-bold mb-4">목차</h3>
+
+      <ul className="space-y-2">
+        {toc.map((item) => {
+          const isTopLevel = item.level === 1;
+          const isActive = item.id === activeId;
+          const isAncestor = ancestorIds.has(item.id);
+          const isChildOfActive = item.parentId === activeId;
+          const isSiblingOfActive =
+            activeItem?.parentId &&
+            item.parentId === activeItem.parentId;
+
+          const isSiblingOfParent =
+            parentItem &&
+            item.parentId === parentItem.parentId &&
+            item.level === parentItem.level;
+
+          const shouldShow =
+            isTopLevel ||         // rule 1 모든 h1 태그는 상시 보여야 함
+            isActive ||           // rule 2 현재 보고 있는 태그
+            isChildOfActive ||    // rule 3 활성화된 태그의 자식
+            isSiblingOfActive ||  // rule 4 활성화된 태그의 형제
+            isSiblingOfParent ||  // rule 5 활성화된 태그의 부모의 형제
+            isAncestor;           // rule 6 활성화된 태그의 연쇄적인 조상
+
+          if (!shouldShow) return null;
+
+          return (
+            <li
+              key={item.id}
+              style={{ paddingLeft: (item.level - 1) * 16 }}
+            >
+              <a
+                href={`#${item.id}`}
+                className={`text-sm hover:underline ${isActive ? "font-bold text-blue-500" : "text-gray-700"
+                  }`}
+              >
+                {item.text}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </aside>
+  );
+}
+```
+
+### d. [category]/[slug]/page.tsx 수정
+```ts
+//  `app/[category]/[slug]/page.tsx`
+import { getPostData, getAllPostsData } from '@/lib/posts'
+import BlogPost from '@/components/BlogPost';
+import { notFound } from 'next/navigation';
+import { getTocFromMarkdown } from '@/lib/parseToc';
+import TOC from '@/components/TOC';
+
+export async function generateStaticParams() {
+    const posts = getAllPostsData();
+    return posts.map((post) => ({
+        category: post.category,
+        slug: post.slug,
+    }));
+}
+
+export default async function Post({ params }: { params: Promise<{ category: string, slug: string }> }) {
+    const { category, slug } = await params
+
+    const postData = getPostData(category, slug);
+    if (postData === null) {
+        return notFound();
+    }
+    const toc = getTocFromMarkdown(postData.content);
+
+    return (
+        <div className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+            <div>
+            </div>
+
+            {/* 중앙 콘텐츠 */}
+            <div className="w-full mx-auto Markdown-body">
+                <BlogPost post={postData} />
+            </div>
+
+            <div className="flex justify-start">
+                <TOC toc={toc} />
+            </div>
+        </div>
+    )
+}
+```
+
+## 3-4. 글 목록 사이드바 추가
+- 현재 상단의 네비 바에서 특정 카테고리로 들어가는 기능만 구현이 돼 있어 특정 페이지를 들어가려면 주소창에 직접 slug를 치고 들어가야합니다.
+- 포스트 페이지에서 좌측에 글 목록 사이드바를 추가해 해당 포스트의 카테고리에 있는 모든 글들 목록을 띄우는 컴포넌트를 만들겁니다.
+
+### b. CategorySidebar.tsx 컴포넌트 작성
+```ts
+// /components/CategorySidebar.tsx
+import Link from "next/link";
+import { getPostsByCategory } from "@/lib/posts";
+ 
+export default function CategorySidebar({ currentCategory }: { currentCategory: string }) {
+  const posts = getPostsByCategory(currentCategory);
+ 
+  return (
+    <aside className="sticky top-20 space-y-2 mt-2">
+      <h2 className="font-bold text-xl mb-3 capitalize">{currentCategory}</h2>  
+      <ul className="space-y-1">
+        {posts.map(post => (
+          <li key={post.slug}>
+            <Link
+              href={`/${encodeURIComponent(currentCategory)}/${encodeURIComponent(post.slug)}`}
+              className="block hover:text-blue-600"
+            >
+              {post.title ?? post.slug}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </aside>
+  );
+}
+```
+
+### c. 포스트 페이지에 적용
+```ts
+//  /app/[category]/[slug]/page.tsx`
+import { getPostData, getAllPostsData } from '@/lib/posts'
+import BlogPost from '@/components/BlogPost';
+import { notFound } from 'next/navigation';
+import { getTocFromMarkdown } from '@/lib/parseToc';
+import TOC from '@/components/TOC';
+import CategorySidebar from '@/components/CategorySidebar';
+
+export async function generateStaticParams() {
+    const posts = getAllPostsData();
+    return posts.map((post) => ({
+        category: post.category,
+        slug: post.slug,
+    }));
+}
+
+export default async function Post({ params }: { params: Promise<{ category: string, slug: string }> }) {
+    const { category, slug } = await params
+
+    const postData = getPostData(category, slug);
+    if (postData === null) {
+        return notFound();
+    }
+    const toc = getTocFromMarkdown(postData.content);
+    return (
+        <div className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+            <div className="flex justify-end">
+                <CategorySidebar currentCategory={category} />
+            </div>
+
+            {/* 중앙 콘텐츠 */}
+            <div className="w-full mx-auto Markdown-body">
+                <BlogPost post={postData} />
+            </div>
+
+            <div className="flex justify-start">
+                <TOC toc={toc} />
+            </div>
+        </div>
+    )
+}
+```
+
+## 3-5. 메인페이지 전용 사이드 컴포넌트
+- 메인 인덱스 페이지에서는 양 옆에, 최신글 같은 정보를 띄우기 위해 따로 컴포넌트를 작성합니다.
+- 왼쪽 사이드바: 최근 글, 카테고리 목록
+- 오른쪽 사이드바: 최근 프로젝트, 유용한 사이트 목록
+
+### a. LeftSidebar.tsx 
+```ts
+// /components/LeftSidebar.tsx
+import Link from "next/link";
+import { getAllPostsData } from "@/lib/posts";
+
+export default function LeftSidebar() {
+  const allPosts = getAllPostsData();
+  const recentPosts = allPosts.slice(0, 3);
+  const categories: string[] = Array.from(
+    new Set(allPosts.map((post) => post.category).filter((cat): cat is string => Boolean(cat)))
+  ).sort();
+  const counts = allPosts.reduce<Record<string, number>>((acc, p) => {
+    const cat = p.category ?? "";
+    acc[cat] = (acc[cat] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  return (
+    <aside className="sticky top-20 space-y-2 mt-2">
+      <section>
+        <h2 className="font-bold text-xl mb-3">최근 글 보기</h2>
+        <ul className="space-y-1">
+          {recentPosts.map((post) => (
+            <li key={`${post.category}-${post.slug}`}>
+              <Link
+                href={`/${encodeURIComponent(post.category!)}/${encodeURIComponent(post.slug)}`}
+                className="block hover:text-blue-600"
+              >
+                {post.title ?? post.slug}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="font-bold text-xl mt-5 mb-3">카테고리 목록</h2>
+        <ul className="space-y-1">
+          {categories.map((cat) => (
+            <li key={cat}>
+              <Link
+                href={`/${encodeURIComponent(cat)}`}
+                className="flex items-center justify-between hover:text-blue-600"
+              >
+                <span>{cat} ({counts[cat] ?? 0})</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </aside>
+  );
+}
+```
+
+### b. RightSidebar.tsx
+- config.ts를 통해 유용한 사이트를 불러오도록 합니다 
+
+#### 1. config.ts
+```ts
+// /lib/config.ts
+// 환경 설정 파일
+export interface SpecialCategoryConfig {
+  category: string;          // category 이름 (posts.category와 동일)
+  label: string;        // 네비에 보일 이름
+}
+
+export const specialCategories: SpecialCategoryConfig[] = [
+  {
+    category: "Project",
+    label: "프로젝트",
+  },
+  {
+    category: "Journal",
+    label: "일지",
+  },
+];  
+
+// 유용한 사이트
+export interface UsefulLink {
+  name: string;
+  url: string;
+}
+export const usefulLinks: UsefulLink[] = [
+  { name: "Next.js 학습자료", url: "https://sangkon.com/practice-ts/" },
+];
+```
+
+#### 2. RightSidebar.tsx
+```ts
+// /components/RightSidebar.tsx
+import Link from "next/link";
+import { getAllPostsData } from "@/lib/posts";
+import { usefulLinks } from "@/lib/config";
+ 
+export default function RightSidebar() {
+  const allPosts = getAllPostsData();
+  const recentProjectPosts = allPosts
+    .filter((p) => p.category === "Project")
+    .slice(0, 5);
+ 
+  return (
+    <aside className="sticky top-20 space-y-2 mt-2">
+      <section>
+        <h2 className="font-bold text-xl mb-3">최근 프로젝트</h2>
+        <ul className="space-y-1">
+          {recentProjectPosts.map((post) => (
+            <li key={`project-${post.slug}`}>
+              <Link
+                href={`/${encodeURIComponent(post.category!)}/${encodeURIComponent(post.slug)}`}
+                className="block hover:text-blue-600"
+              >
+                {post.title ?? post.slug}
+              </Link>
+            </li>
+          ))}
+          {recentProjectPosts.length === 0 && (
+            <li className="text-sm text-gray-500">프로젝트 글이 없습니다.</li>
+          )}
+        </ul>
+      </section>
+ 
+      <section>
+        <h2 className="font-bold text-xl mt-5 mb-3">유용한 사이트</h2>
+        <ul className="space-y-1">
+          {usefulLinks.map((l) => (
+            <li key={l.url}>
+              <a
+                href={l.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block hover:text-blue-600"
+              >
+                {l.name}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </aside>
+  );
+}
+```
+
+### c. page.tsx 수정
+```ts
+// /app/page.tsx
+import { getPostData } from '@/lib/posts'
+import BlogPost from '@/components/BlogPost'
+import LeftSidebar from '@/components/LeftSidebar';
+import RightSidebar from '@/components/RightSidebar';
+import { notFound } from 'next/navigation';
+ 
+// MDX plugins are provided via shared options
+ 
+export default async function Post() {
+    const postData = getPostData("", 'index')
+    if (postData === null) {
+        return notFound();
+    }
+ 
+    return (
+        <div className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+ 
+            {/* 왼쪽 사이드 컨텐츠 */}
+            <div className="flex justify-end">
+              <LeftSidebar />
+            </div>
+ 
+            {/* 가운데 컨텐츠 */}
+            <div className="w-full mx-auto">
+                <BlogPost post={postData}/>
+            </div>
+ 
+            {/* 오른쪽 사이드 컨텐츠 */}
+            <div className="flex justify-start">
+              <RightSidebar />
+            </div>
+ 
+        </div>
+ 
+    );
+}
+```
+
+```ts
+// /app/about/page.tsx
+import BlogPost from "@/components/BlogPost";
+import type { Metadata } from "next";
+import { getPostData } from "@/lib/posts";
+import LeftSidebar from "@/components/LeftSidebar";
+import RightSidebar from "@/components/RightSidebar";
+
+export async function generateMetadata(): Promise<Metadata> {
+    const post = getPostData("", 'about')
+    return {
+        title: post?.title ?? "소개",
+        description: post?.description ?? "소개 페이지",
+    };
+}
+
+export default async function AboutPage() {
+    const postData = getPostData("", 'about')
+    if (postData === null) {
+        return <div>존재하지 않는 포스트입니다.</div>;
+    }
+
+    return (
+        <main className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+            <div className="flex justify-end">
+                <LeftSidebar />
+            </div>
+            <div className="w-full mx-auto">
+                <BlogPost post={postData}/>
+            </div>
+            <div className="flex justify-start">
+                <RightSidebar />
+            </div>
+        </main>
+    );
+}
+```
+
+## 3-6 404 페이지 설정
+
+### a. 404.mdx
+```mdx
+---
+title: 페이지를 찾을 수 없습니다
+date: "2025-12-18"
+description: 요청하신 문서를 찾을 수 없어요. 아래 링크를 참고해 주세요.
+---
+
+\# 페이지를 찾을 수 없습니다
+
+요청하신 카테고리 또는 글이 존재하지 않아요.
+
+- 홈으로 이동하거나 카테고리에서 다른 글을 찾아보세요.
+- 주소가 정확한지 다시 확인해 주세요.
+
+[홈으로 이동](/)
+
+```
+
+```ts
+// /app/not-found.tsx
+import { getPostData } from "@/lib/posts";
+import BlogPost from "@/components/BlogPost";
+import { TocItem, getTocFromMarkdown } from "@/lib/parseToc";
+import LeftSidebar from "@/components/LeftSidebar";
+import RightSidebar from "@/components/RightSidebar";
+ 
+export default function NotFound() {
+    let postData = getPostData("", "404");
+    let toc: TocItem[] = [];
+ 
+    toc = getTocFromMarkdown(postData!.content);
+ 
+    return (
+        <div className="grid grid-cols-[1fr_1000px_1fr] gap-8 w-full">
+            <div className="flex justify-end">
+                <LeftSidebar />
+            </div>
+ 
+            {/* 중간 콘텐츠 */}
+            <div className="w-full mx-auto">
+                <BlogPost post={postData!}/>
+            </div>
+ 
+            {/* 오른쪽 TOC → 클라이언트 컴포넌트 */}
+            <div className="flex justify-start">
+                <RightSidebar />
+            </div>
+        </div>
+    );
+}
+```
+
+## 3-7. 웹 사이트 메타데이터 설정
+***layout.tsx에 추가***
+```ts
+export const metadata: Metadata = {
+  icons:{
+      icon: "" // 이미지 주소
+  },
+  title: "개발블로그",
+  description: "Generated by create next app",
+};
+```
+
+***/app/[category]/[slug]/page.tsx에 추가***
+```ts
+import { Metadata } from 'next';
+
+export async function generateMetadata({
+    params,
+}: {
+    params: Promise<{ category: string; slug: string }>;
+}): Promise<Metadata> {
+    const { category, slug } = await params;
+    const decodedCategory =
+        typeof category === "string"
+            ? decodeURIComponent(category).replace(/\+/g, " ").trim()
+            : category;
+
+    let post = getPostData(decodedCategory, slug);
+    if (post === null) {
+        if (!post) {
+            post = getPostData("", "404");
+        }
+    }
+
+    return {
+        title: post!.title,
+        description: post!.description,
+    };
+}
+```
+
+# 4. mdx 주소 변환
+
+- mdx에서 이미지를 참조할 땐 절대주소(외부링크) 참조방식과 상대주소(프로젝트 내 public 폴더 안의 사진들) 방식이 있습니다.
+```mdx
+![외부링크](https://github.githubassets.com/favicons/favicon.svg) // 외부 이미지 링크
+![projectFile](a.JPG) // public/a.JPG 링크
+```
+- 이 이미지 참조를 편하게 하기 위해 앱 라우팅 구조와 비슷한 파일 구조를 사용해 수정할 것입니다.
+- 즉, [category]/[slug] 형식에 맞춰, 이미지 파일을 public/images/[category]/[slug] 폴더에 사진 파일을 넣으면,  
+a.JPG 링크시 public/images/[category]/[slug]/a.JPG가 링크되도록 합니다.
+- 코드블럭을 삽입할 때처럼 컴포넌트를 img 컴포넌트를 오버라이딩 해 url(src)를 바꿉니다. 
+- ***참고로, 깃허브 페이지 배포시에 이미지 확장자에 민감하기 때문에 대소문자 유의하여 작성하여야합니다.***
+- ***또한, 깃허브 페이지 배포시에 링크 앞에 깃허브 저장소 이름이 붙습니다. 그에 대응하기 위한 환경설정도 해주어야합니다.***
+## 테스트 사진(a.png)
+![불꽃숭이](a.png)
+
+## 로컬 개발환경 / 배포 환경 구분 config.ts
+```ts
+// /lib/config.ts
+// 환경 설정 파일
+export const isLocalDev = process.env.NODE_ENV === 'development'
+export const repoName = "blog"
+
+export interface SpecialCategoryConfig {
+  category: string;          // category 이름 (posts.category와 동일)
+  label: string;        // 네비에 보일 이름
+}
+ 
+export const specialCategories: SpecialCategoryConfig[] = [
+  {
+    category: "Project",
+    label: "프로젝트",
+  },
+  {
+    category: "Journal",
+    label: "일지",
+  },
+];  
+ 
+// 유용한 사이트
+export interface UsefulLink {
+  name: string;
+  url: string;
+}
+export const usefulLinks: UsefulLink[] = [
+  { name: "Next.js 학습자료", url: "https://sangkon.com/practice-ts/" },
+];
+```
+## 4-1. MdxImage
+
+### a. MdxImage.tsx
+```ts
+// /components/MdxImage.tsx
+import { isLocalDev, repoName } from "@/lib/config";
+import Image from "next/image";
+import { ImgHTMLAttributes } from "react";
+ 
+const resolveImagePath = (category: string, slug: string, value: string | undefined): string => {
+    const v = String(value);
+ 
+    // 웹 이미지 주소는 그대로
+    if (
+        v.startsWith("http://") ||
+        v.startsWith("https://")
+    ) {
+        return v;
+    }
+    const baseurl = isLocalDev ? '' : `/${repoName}`;
+    return `${baseurl}/images/${encodeURIComponent(category)}/${encodeURIComponent(slug)}/${v}`;
+};
+ 
+interface MdxImageProps extends ImgHTMLAttributes<HTMLImageElement> {
+    category: string;
+    slug: string;
+}
+ 
+export const MdxImage = ({ category, slug, ...props }: MdxImageProps) => {
+    const {
+        src,
+        alt,
+        width,
+        height,
+        ...rest
+    } = props;
+ 
+    const resolvedSrc = resolveImagePath(category, slug, src as string);
+ 
+    return (
+        <span className="relative block w-full aspect-[3/2]">
+            <Image
+                unoptimized
+                src={resolvedSrc}
+                alt={alt ?? ""}
+                fill
+                className="object-contain"
+                {...rest}
+            />
+        </span>
+    );
+};
+```
+
+### b. Components/BlogPost.tsx 수정
+```ts
+// components/BlogPost.tsx
+'use client'
+import type { Post } from '@/lib/posts';
+import { MDXRemote } from 'next-mdx-remote/rsc'
+import remarkGfm from "remark-gfm";
+import rehypeKatex from "rehype-katex";
+import rehypeSlug from "rehype-slug";
+import remarkToc from 'remark-toc';
+import rehypePrettyCode from "rehype-pretty-code";
+import remarkMath from 'remark-math';
+import CodeBlock from '@/components/CodeBlock';
+import { MdxImage } from '@/components/MdxImage';
+ 
+const prettyOptions = {
+  theme: "github-dark",
+  keepBackground: true,
+};
+ 
+interface BlogPostProps {
+    post: Post
+}
+ 
+export default function BlogPost({ post }: BlogPostProps) {
+    return (
+        <article className="w-full bg-gray-100 p-4 rounded-md">
+ 
+            {/* 제목/날짜 */}
+            <header className="mb-8">
+                <h1 className="text-3xl font-bold mb-2">{post.title}</h1>
+                <time className="text-gray-500">{post.date}</time>
+ 
+                <p className="mt-3 text-lg text-gray-600 leading-relaxed max-w-prose">
+                    {post.description}
+                </p>
+            </header>
+ 
+ 
+            {/* 본문 전체 레이아웃 (flex + markdown-body) */}
+            <div className="bg-gray-100">
+                <div className="!bg-gray-100 p-6 rounded-md">
+ 
+                    {/* markdown 본문 */}
+                    <div className="markdown-body !bg-gray-100">
+                        <MDXRemote
+                            source={post.content}
+                            components={{
+                                pre: (props) => <CodeBlock {...props} />,
+                                img: (props) => <MdxImage category={post.category} slug={post.slug} {...props} />,
+                            }}
+                            options={{
+                                mdxOptions: {
+                                    remarkPlugins: [remarkGfm, remarkToc, remarkMath],
+                                    rehypePlugins: [[rehypePrettyCode, prettyOptions], rehypeSlug, rehypeKatex],
+                                },
+                            }}
+                        />
+                    </div>
+ 
+                </div>
+            </div>
+ 
+        </article>
+    );
+}
+```
+
+## 4-2 MdxLink
+
+- 주소 링크도 내부 블로그 포스트 주소 지정시에 깃허브 배포환경에서 잘 돌아가도록 설정을 해줍니다 
+- 간단하게 /로 시작하는 주소만을 내부 주소로 사용합니다 
+- 즉, 내부 주소 지정시에는 무조건 /로 시작하도록 해야합니다
+
+### a. BlogPost.tsx 수정
+```ts
+// components/BlogPost.tsx
+'use client'
+import type { Post } from '@/lib/posts';
+import { MDXRemote } from 'next-mdx-remote/rsc'
+import remarkGfm from "remark-gfm";
+import rehypeKatex from "rehype-katex";
+import rehypeSlug from "rehype-slug";
+import remarkToc from 'remark-toc';
+import rehypePrettyCode from "rehype-pretty-code";
+import remarkMath from 'remark-math';
+import CodeBlock from '@/components/CodeBlock';
+import { MdxImage } from '@/components/MdxImage';
+import { isLocalDev, repoName } from '@/lib/config';
+ 
+const prettyOptions = {
+    theme: "github-dark",
+    keepBackground: true,
+};
+ 
+interface BlogPostProps {
+    post: Post
+}
+ 
+function resolveLink(href: string): string {
+    if (!href.startsWith('/')
+    ) {
+        return href;
+    }
+ 
+    const baseurl = isLocalDev ? `` : `/${repoName}`;
+    return `${baseurl}${href}`;
+}
+ 
+export default function BlogPost({ post }: BlogPostProps) {
+    return (
+        <article className="w-full bg-gray-100 p-4 rounded-md min-h-screen">
+ 
+            {/* 제목/날짜 */}
+            <header className="mb-8">
+                <h1 className="text-3xl font-bold mb-2">{post.title}</h1>
+                <time className="text-gray-500">{post.date}</time>
+ 
+                <p className="mt-3 text-lg text-gray-600 leading-relaxed max-w-prose">
+                    {post.description}
+                </p>
+            </header>
+ 
+ 
+            {/* 본문 전체 레이아웃 (flex + markdown-body) */}
+            <div className="bg-gray-100">
+                <div className="!bg-gray-100 p-6 rounded-md">
+ 
+                    {/* markdown 본문 */}
+                    <div className="markdown-body !bg-gray-100">
+                        <MDXRemote
+                            source={post.content}
+                            components={{
+                                pre: (props) => <CodeBlock {...props} />,
+                                img: (props) => <MdxImage category={post.category} slug={post.slug} {...props} />,
+                                ul: (props) => <ul className="list-disc space-y-2 ml-6 my-4" {...props} />,
+                                ol: (props) => <ol className="list-decimal space-y-2 ml-6 my-4" {...props} />,
+                                a: (props) => {
+                                    const href = props.href || '';
+                                    const url = resolveLink(href);
+                                    return <a {...props} href={url} />;
+                                }
+                            }}
+                            options={{
+                                mdxOptions: {
+                                    remarkPlugins: [remarkGfm, remarkToc, remarkMath],
+                                    rehypePlugins: [[rehypePrettyCode, prettyOptions], rehypeSlug, rehypeKatex],
+                                },
+                            }}
+                        />
+                    </div>
+ 
+                </div>
+            </div>
+ 
+        </article>
+    );
+}
+```
+
+# 5. github page 배포
+1. Github 저장소 설정에 들어가서 Pages 탭에 들어갑니다
+2. Build and deployment에서 Source 옵션에 GitHub Actions를 선택합니다
+3. Nextjs 옵션을 선택하고서 커밋하면 알아서 깃허브가 배포를 해줍니다 
+
+# 추가할만한 기능
+1. 깃허브 커밋 기록을 찾아서 해당 mdx 파일의 변경 기록을 볼 수 있게 해주는 기능
+2. 깃허브 Issues를 활용해 댓글시스템을 구현하는 기능
+3. mdx파일명 뒤에 번호뒤 붙여서 한 페이지에서 여러개 mdx파일을 이어 붙여 렌더링 하는 기능
+4. h태그 단위로 구간을 나눈뒤 방향키를 통해 ppt처럼 발표할 수 있게 하는 기능

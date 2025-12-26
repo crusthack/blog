@@ -1,0 +1,186 @@
+---
+title: 'mdx 문법 정리'
+date: '2025-12-24'
+---
+# 1. Headings
+
+# H1
+## H2
+### H3
+#### H4
+##### H5
+###### H6
+
+---
+
+# 2. Text Emphasis
+
+*Italic*
+_Italic_
+
+**Bold**
+__Bold__
+
+***Bold Italic***
+
+~~Strikethrough (GFM)~~
+
+---
+
+# 3. Paragraphs and Line Breaks
+
+This is a paragraph.
+
+This is another paragraph.
+
+Line with two spaces at end for line break.  
+Next line.
+
+---
+
+# 4. Blockquotes
+
+> Single line quote
+>
+> Multi-line quote
+>> Nested quote
+
+---
+
+# 5. Lists
+
+## Unordered
+
+- Item A
+- Item B
+  - Nested Item
+    - Deep Nested
+
+## Ordered
+
+1. First
+2. Second
+   1. Sub item
+   2. Sub item
+
+## Task List (GFM)
+
+- [ ] Todo item
+- [x] Completed item
+
+---
+
+# 6. Code
+
+## Inline Code
+
+Use `npm install` to install dependencies.
+
+## Fenced Code Block
+
+```js
+function hello() {
+  console.log("Hello World");
+}
+```
+
+```ts
+type Post = {
+  title: string
+  content: string
+}
+```
+
+---
+
+# 7. Tables (GFM)
+
+| Feature | Supported | Notes |
+|--------|-----------|-------|
+| Tables | Yes | GFM |
+| MDX | Yes | JSX |
+
+| Left | Center | Right |
+|:-----|:------:|------:|
+| a | b | c |
+
+---
+
+# 8. Links & Images
+
+[GitHub](https://github.com)
+
+https://example.com
+
+![Alt Text](./image.png)
+
+---
+
+# 9. Horizontal Rule
+
+---
+
+***
+
+___
+
+---
+
+# 10. HTML (Allowed in MDX)
+
+<div style={{ border: '1px solid #ccc', padding: '8px' }}>
+  <strong>HTML inside MDX</strong>
+</div>
+
+---
+
+
+---
+
+# 12. MDX Expressions
+
+Random number: {Math.floor(Math.random() * 100)}
+
+Boolean: {true ? 'true' : 'false'}
+
+---
+
+# 13. Import / Export (ESM)
+
+export const answer = 42
+
+---
+
+# 14. Definition Lists (via HTML)
+
+<dl>
+  <dt>MDX</dt>
+  <dd>Markdown + JSX</dd>
+</dl>
+
+---
+
+# 15. Escaping
+
+\*This is not italic\*
+
+---
+
+# 16. Footnotes (GFM extension, if enabled)
+
+Here is a footnote reference.[^1]
+
+[^1]: This is the footnote text.
+
+---
+
+# 17. Autolink Email (GFM)
+
+test@example.com
+
+---
+
+# 18. Nested Markdown in JSX
+
+
+---
