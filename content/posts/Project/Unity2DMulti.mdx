@@ -1,0 +1,1468 @@
+---
+title: 'Unity2DMulti'
+date: '2026-01-30'
+---
+
+# 개요
+## 유니티 엔진을 이용한 멀티플레이 구현 프로젝트
+- 확장성 있는 네트워크 라이브러리를 만들어보고, 게임에 적용해 게임에서 네트워크 통신을 어떻게 수행하는지 학습하기 위한 프로젝트입니다.
+- 게임 클라이언트 유니티 엔진을 통해 제작하였으며, 외부 에셋 없이 최소한으로만 구현하였습니다. 
+- 네트워크 라이브러리는 C#의 Net.Sockets 클래스를 이용해 만들었으며, 간편한 데이터 직렬화를 위해 Protobuf를 같이 사용했습니다. 
+- 멀티플레이 구현은 플레이어 한 명이 게임 방을 만들고서 다른 플레이어들이 참여하는 방식으로, 게임 서버는 패킷 중계 역할만을 주로 수행합니다. 
+
+## 주요 구현
+### 1. 로그인 기능
+- 이름만을 가지고 로그인 시도. 이미 서버에 같은 이름으로 로그인 되어있는 유저가 존재하면 거부.   
+**데이터 저장(DB연동, 파일시스템) 없습니다**
+
+### 2. 게임 방 열기 / 참여 
+- 호스트 유저가 게임 방 제목, 비밀번호 설정. 다른 유저는 게임 방 목록을 받고서 참여.
+
+### 3. 채팅 기능
+- 방 안의 유저들끼리 채팅으로 소통. 
+
+### 4. 게임 동기화
+- 호스트 유저 기반으로 각 유저에게 상태를 전파하면서 게임 상태를 동기화. 
+
+### ~5. 데디케이티드 서버~
+- 서버측에서 따로 데디케이티드 서버를 열어 DB와 연동해 게임을 관리하고자 하였으나 포기. 다만 이를 염두해두고 프로젝트를 설계하였으며 추후 구현 가능. 
+
+# 1. 게임 클라이언트(싱글플레이) 제작
+## 게임 설명
+1. 단순하게 캐릭터를 상하좌우로 움직이며 자동 스폰되는 적들을 처치해 점수를 쌓는 게임
+2. 스킬시스템 존재. 패시브 스킬, 액티브 스킬 2개 스킬
+3. 플레이어 캐릭터는 죽지 않는 대신 적과 피격시 해당 적 소멸 및 점수 감소
+4. 싱글플레이는 로컬에 파일로 데이터를 저장합니다. (키보드 x키 누르고, 타이틀 이동시 저장) 
+
+## 캐릭터 선택창 
+
+![선택창사진](1.JPG)
+- 캐릭터는 원 스프라이트로 표현했습니다. 
+- A 캐릭터는 캐릭터 전면(이동방향(원이라서 앞뒤구분이 잘 안 됨))에 하얀색 블럭을 일시적으로 소환한 뒤 해당 블럭에 닿는 적들에게 데미지를 줍니다.
+ 패시브 스킬은 일시적으로 적 처치시 얻는 점수가 2배 증가하며 자동으로 발동됩니다. 
+- B 캐릭터는 액티브 스킬로 일시적으로 이동속도가 증가하는 스킬이 있으며, 패시브 스킬로 주변 적에게 자동으로 검정색 블럭을 생성해 날립니다. 
+- 게임 상황은 x버튼 누르고 메인메뉴 이동 시 저장되며, 마지막에 어느 맵, 어느 위치에서 종료했는지(Map_A / Map_B 및 좌표 저장)와 점수를 저장합니다. 
+
+
+## 게임 플레이
+
+![게임플레이사진1](2.JPG)
+![게임플레이사진1](3.JPG)
+
+- 중앙의 원이 플레이어 캐릭터입니다. wasd를 이용해 상하좌우 이동을 합니다. 
+- 빨강색 세모가 적 캐릭터입니다. 맵에 자동으로 생성되고 내부적으로 풀링을 활용해 관리합니다. 
+- 갈색 테두리가 맵의 경계선이며 회색 타일은 장애물(바위)입니다.
+- 스킬 사용시 스킬이미지에 회색 쿨타임 바가 돌며, DOubleScoredlsk SpeedUp과 같은 버프형 스킬은 활성된 시간 동안에 위에 노란색 스크롤이 생깁니다. 
+- 하얀색 캡슐을 통해 맵을 오갈 수 있습니다.(위의 진한 녹색 맵이 맵B, 아래 사진의 연한 녹색 맵이 맵A입니다)
+- 조작키: wasd(이동), k / q(액티브 스킬 사용), x (게임 정지)
+
+
+# 2. 네트워크 라이브러리(C# Socket, Protobuf) 만들기
+- 단순히 이번 프로젝트만을 위한 라이브러리가 아닌, 이전 소켓프로그래밍 경험을 토대로 유연한 라이브러리를 제작하고자 하였습니다. 
+- 기본적인 메시지 클래스를 설계한 후, 실제 프로젝트에서는 Protobuf 메시지를 송수신 할 수 있도록 ProtobufMessage 클래스를 구현하였습니다.
+
+
+## 1. 메시지 설계
+- 소켓통신을 통해 주고받을 메시지를 설계합니다. 
+- 소켓통신을 수행하는 클래스 측에서는 아래의 BaseMessage를 주고 받는다고 생각하고 동작합니다. 
+즉, 바이트 스트림을 받았을 때의 파싱/역직렬화 메서드, 바이트 스트림으로 내보낼 수 있도록 하는 직렬화 메서드와 같은 인터페이스를 제공해야합니다. 
+
+### BaseMessage
+```c#
+using System.Text;
+
+namespace NetworkController.Message
+{
+    public class BaseMessage : IMessageParser<BaseMessage>
+    {
+        string Payload;
+
+        public BaseMessage(string payload = "")
+        {
+            Payload = payload;
+        }
+
+        public virtual Int32 GetSize()
+        {
+            return Encoding.UTF8.GetByteCount(Payload);
+        }
+
+        public static Int32 GetMaxSize()
+        {
+            return 1024;
+        }
+
+        public virtual byte[] Serialize()
+        {
+            return Encoding.UTF8.GetBytes(Payload);
+        }
+        public virtual Int32 Serialize(Span<byte> buffer)
+        {
+            if(buffer.Length < Encoding.UTF8.GetByteCount(Payload))
+            {
+                throw new Exception("Buffer size is smaller than payload size.");
+            }
+
+            return Encoding.UTF8.GetBytes(Payload, buffer);
+        }
+
+        public static int Parse(byte[] data, Int32 size, out BaseMessage? message)
+        {
+            string m = Encoding.UTF8.GetString(data, 0, size);
+            message = new BaseMessage(m);
+
+            return size;
+        }
+    }
+
+    public interface IMessageParser<T>
+    {
+        static abstract int Parse(byte[] data, int size, out T? message);
+
+        static abstract Int32 GetMaxSize();
+    }
+
+    public interface IMessageHeader
+    {
+        static Int32 HeaderSize { get; }
+        abstract Int32 Serialize(Span<byte> buffer);
+        static abstract int Parse(byte[] buffer, int Size, out IMessageHeader? header);
+    }
+}
+
+```
+#### 설명
+
+- 기본적인 소켓통신에서 수신한 바이트 스트림을 곧바로 문자열로 출력하는 상황을 가정한 구현입니다. 실제 사용을 해본 적은 없습니다. 단순히 메시지 설계를 위한 인터페이스 용도로 구현된 상태입니다.
+
+**주요 메서드**
+- `static abstract int Parse(byte[] data, int size, out T? message)` 바이트 스트림을 받아 파싱을 성공한다면, message를 내보내고 파싱에 사용한 바이트 수를 반환합니다. 음수(-1) 반환시 파싱 실패입니다.
+- `static abstract Int32 GetMaxSize()` 메시지의 최대 크기를 받습니다. 버퍼 크기 설정을 위해 사용합니다.
+- `public virtual Int32 Serialize(Span<byte> buffer)` 메시지를 바이트 스트림으로 직렬화해서 반환합니다. 
+- `public virtual Int32 Serialize(Span<byte> buffer)` 메시지를 직렬화 했을 때 바이트 크기를 반환합니다.
+
+### ProtobufMessage
+```c#
+using Google.Protobuf;
+using System.Buffers.Binary;
+using Protos;
+
+namespace NetworkController.Message
+{
+    public class ProtobufMessage : BaseMessage, IMessageParser<ProtobufMessage>
+    {
+        public enum OpCode : Int32
+        {
+            System = 1,
+            Chatting = 2,
+        }
+
+        public ProtobufMessageHeader Header;
+        public Google.Protobuf.IMessage Payload;
+
+        public ProtobufMessage(Google.Protobuf.IMessage payload, OpCode opCode)
+        {
+            Header = new ProtobufMessageHeader(payload.CalculateSize(), (Int32)opCode);
+            Payload = payload;
+            if (GetSize() > GetMaxSize())
+            {
+                throw new ArgumentException("Payload size exceeds maximum allowed size.");
+            }
+        }
+        public override Int32 GetSize()
+        {
+            return ProtobufMessageHeader.HeaderSize + Payload.CalculateSize();
+        }
+        public new static Int32 GetMaxSize()
+        {
+            return 1024;
+        }
+
+        public override byte[] Serialize()
+        {
+            var headerSize = ProtobufMessageHeader.HeaderSize;
+            var payloadSize = Payload.CalculateSize();
+            byte[] buffer = new byte[headerSize + Payload.CalculateSize()];
+
+            var offset = Header.Serialize(buffer);
+            Payload.WriteTo(buffer.AsSpan<byte>(offset, payloadSize));
+
+            return buffer;
+        }
+
+        public override Int32 Serialize(Span<byte> buffer)
+        {
+            Header.Serialize(buffer);
+            Payload.WriteTo(buffer.Slice(ProtobufMessageHeader.HeaderSize, Payload.CalculateSize()));
+
+            return GetSize();
+        }
+
+        public static int Parse(byte[] data, int size, out ProtobufMessage? msg)
+        {
+            var offset = ProtobufMessageHeader.Parse(data, size, out var header);
+            if (offset == -1)
+            {
+                msg = null;
+                return -1;
+            }
+            if (offset == 0 || header == null)
+            {
+                msg = null;
+                return 0;
+            }
+
+            var messageHeader = header as ProtobufMessageHeader;
+            if (size < ProtobufMessageHeader.HeaderSize + messageHeader!.PayloadSize)
+            {
+                msg = null;
+                return 0;
+            }
+
+            var payload = ProtobufParserRegistry.Parse(
+                messageHeader.OpCode, new ReadOnlySpan<byte>(data, ProtobufMessageHeader.HeaderSize, messageHeader.PayloadSize));
+            msg = new ProtobufMessage(payload, (OpCode)messageHeader.OpCode);
+
+            return ProtobufMessageHeader.HeaderSize + messageHeader.PayloadSize;
+        }
+    }
+
+    public class ProtobufMessageHeader : IMessageHeader
+    {
+        public static Int32 HeaderSize => 20;
+        public Int32 PayloadSize;       // 4
+        public Int32 OpCode;            // 4
+        private Int64 _TimeStamp;       // 8
+        public Int64 Timestamp => _TimeStamp;
+        static public Int32 CheckKey = 0x2026; // 4
+
+        public ProtobufMessageHeader(Int32 payloadSize, Int32 opCode)
+        {
+            PayloadSize = payloadSize;
+            OpCode = opCode;
+            _TimeStamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        }
+        ProtobufMessageHeader(Int32 p, Int32 o, Int64 t, Int32 c)
+        {
+            PayloadSize = p;
+            OpCode = o;
+            _TimeStamp = t;
+            CheckKey = c;
+        }
+        public int Serialize(Span<byte> buffer)
+        {
+            if (buffer.Length < HeaderSize)
+                throw new ArgumentException("Buffer too small", nameof(buffer));
+
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(0, 4), PayloadSize);
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(4, 4), OpCode);
+            BinaryPrimitives.WriteInt64LittleEndian(buffer.Slice(8, 8), _TimeStamp);
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(16, 4), CheckKey);
+
+            return HeaderSize;
+        }
+        static public int Parse(byte[] buffer, int size, out IMessageHeader? header)
+        {
+            if (size < HeaderSize)
+            {
+                header = null;
+                return 0;
+            }
+
+            BinaryPrimitives.TryReadInt32LittleEndian(new ReadOnlySpan<byte>(buffer, 0, 4), out Int32 payloadSize);
+            BinaryPrimitives.TryReadInt32LittleEndian(new ReadOnlySpan<byte>(buffer, 4, 4), out Int32 opCode);
+            BinaryPrimitives.TryReadInt64LittleEndian(new ReadOnlySpan<byte>(buffer, 8, 8), out Int64 timeStamp);
+            BinaryPrimitives.TryReadInt32LittleEndian(new ReadOnlySpan<byte>(buffer, 16, 4), out Int32 checkKey);
+            header = new ProtobufMessageHeader(payloadSize, opCode, timeStamp, checkKey);
+            if (checkKey != CheckKey)
+            {
+                return -1;
+            }
+
+            return HeaderSize;
+        }
+    }
+
+    static class ProtobufParserRegistry
+    {
+        static readonly Dictionary<Int32, MessageParser> Parsers = new()
+        {
+            { (Int32)ProtobufMessage.OpCode.System, SystemMessage.Parser},
+            { (Int32)ProtobufMessage.OpCode.Chatting, ChattingMessage.Parser },
+        };
+
+        public static IMessage Parse(Int32 opcode, ReadOnlySpan<byte> payload)
+        {
+            return Parsers[opcode].ParseFrom(payload.ToArray());
+        }
+    }
+}
+```
+#### 설명
+- Protobuf 메시지를 주고받을 수 있도록 감싸는 래퍼 클래스입니다. 고정길이의 헤더 및 페이로드로는 Protobuf 메시지를 사용합니다.
+- 여러개의 Protobuf 메시지를 사용하기 위해 OpCode 값을 사용해 메시지 종류를 표시합니다. 추가적인 Protobuf메시지를 등록하고자 하면, OpCode 추가 및 하단의 ProtobufParserRegistry에 메시지를 등록하면 됩니다.
+
+#### Protobuf Message 예시
+```proto
+syntax = "proto3";
+
+option csharp_namespace = "Protos";
+
+message SystemMessage {
+  oneof payload {
+    LoginRequest login_request = 1;
+    LoginResponse login_response = 2;
+    Heartbeat heartbeat = 3;
+  }
+}
+
+message LoginRequest {
+  string user_name = 1;
+}
+
+message LoginResponse {
+  bool success = 1;
+  string user_name = 2;
+  string message = 3;
+}
+
+message Heartbeat {
+  int64 timestamp = 1;
+}
+// chattingmessage
+syntax = "proto3";
+
+option csharp_namespace = "Protos";
+
+message ChattingMessage{
+	string username = 1;
+	string Message = 2;
+};
+```
+
+## 2. NetworkController
+### 설계 의도
+- 클라이언트측과 서버측에서 같은 클래스를 사용하면 편할 것 같아 각각의 용도로 동작할 수 있도록 구현하였습니다. 크게 효능?은 없는거 같긴 합니다.
+- 소켓통신을 통해 메시지\<T\>를 주고받습니다. 직접적인 데이터 송수신은 SocketContext\<T>에서 다루고, 이 클래스에서는 인터페이스 제공, 서버측에서의 접속 관리를 주로 처리합니다. 
+- 서버측에서는 세션번호를 통해 접속을 구분합니다. 0부터 시작해 1씩 증가합니다.
+```c#
+using NetworkController.Message;
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
+
+namespace NetworkController
+{
+    public class NetworkController<T> where T : BaseMessage, IMessageParser<T>
+    {
+        enum NetworkState { None, Client, Server }
+        NetworkState State = NetworkState.None;
+        Socket _Socket;
+        Int32 BufferSize = T.GetMaxSize() * 10;
+
+        BlockingCollection<Tuple<SocketContext<T>, T>> ReceiveMessageQueue = new();
+
+        SocketContext<T>? ClientContext;
+        ConcurrentStack<SocketContext<T>> ContextQueue = new();
+        ConcurrentDictionary<UInt32, SocketContext<T>> ConnectedContext = new();
+
+        public event Action<SocketContext<T>>? OnConnect;
+        public event Action<SocketContext<T>>? OnDisconnect;
+
+        UInt32 NextSessionID = 0;
+
+        public NetworkController()
+        {
+            _Socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        }
+
+        public void SetReceiveBufferSize(int size)
+        {
+            BufferSize = size;
+        }
+
+        public void Connect(IPAddress ip, UInt16 port)
+        {
+            if (State != NetworkState.None)
+            {
+                throw new Exception("Connect(): NetworkController is already running.");
+            }
+            State = NetworkState.Client;
+            _Socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _Socket.Connect(new IPEndPoint(ip, port));
+
+            ClientContext = GetSocketContext();
+
+            ClientContext.Reset(NextSessionID++, _Socket, ip, port);
+
+            ClientContext.StartReceive();
+        }
+
+        public bool IsConnected()
+        {
+            if (State != NetworkState.Client)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        SocketContext<T> GetSocketContext()
+        {
+            if (ContextQueue.TryPop(out var context))
+            {
+                return context;
+            }
+
+            var c = new SocketContext<T>(BufferSize);
+            c.OnReceiveMessage += (context, message) =>
+            {
+                ReceiveMessageQueue.Add(new Tuple<SocketContext<T>, T>(context, message));
+            };
+
+            c.OnDisconnect += (context) =>
+            {
+                SocketDisconnected(context);
+            };
+
+            return c;
+        }
+
+        public void Disconnect()
+        {
+            if (State != NetworkState.Client)
+            {
+                throw new Exception("Disconnect(): NetworkController is not connected as a client.");
+            }
+            ClientContext!.Disconnect();
+            State = NetworkState.None;
+        }
+
+        public void Disconnect(UInt32 sessionID)
+        {
+            if (State != NetworkState.Server)
+            {
+                throw new Exception("Disconnect(sessionID): NetworkController is not running as a server.");
+            }
+
+            if (ConnectedContext.TryGetValue(sessionID, out var context))
+            {
+                context.Disconnect();
+            }
+            else
+            {
+                throw new Exception($"Disconnect(sessionID): SessionID {sessionID} not found.");
+            }
+        }
+
+        public void OpenServer(IPEndPoint endPoint)
+        {
+            _Socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            _Socket.Bind(endPoint);
+            _Socket.Listen();
+
+            var args = new SocketAsyncEventArgs();
+            args.Completed += (s, e) =>
+            {
+                CompletedAccept(s, e);
+            };
+
+            State = NetworkState.Server;
+
+            StartAccept(args);
+        }
+
+        public void CloseServer()
+        {
+            if (!State.Equals(NetworkState.Server))
+            {
+                throw new Exception("CloseServer(): NetworkController is not running as a server.");
+            }
+            _Socket.Close();
+
+            foreach (var context in ConnectedContext.Values)
+            {
+                context.Disconnect();
+            }
+
+            State = NetworkState.None;
+        }
+
+        public T GetMessage(CancellationToken cancellationToken = default)
+        {
+            return ReceiveMessageQueue.Take(cancellationToken).Item2;
+        }
+
+        public T GetMessage(out SocketContext<T> context, CancellationToken cancellationToken = default)
+        {
+            var tuple = ReceiveMessageQueue.Take(cancellationToken);
+            context = tuple.Item1;
+            return tuple.Item2;
+        }
+
+        public bool IsMessageAvailable()
+        {
+            return !ReceiveMessageQueue.IsCompleted && ReceiveMessageQueue.Count > 0;
+        }
+
+        public void SendMessage(T message)
+        {
+            if (!State.Equals(NetworkState.Client))
+            {
+                throw new Exception("SendMessage: NetworkController is not connected as a client.");
+            }
+            ClientContext!.SendMessage(message);
+        }
+
+        public void SendMessageTo(UInt32 sessionID, T message)
+        {
+            if (!State.Equals(NetworkState.Server))
+            {
+                throw new Exception("SendMessageTo: NetworkController is not running as a server.");
+            }
+            if (ConnectedContext.TryGetValue(sessionID, out var context))
+            {
+                context.SendMessage(message);
+            }
+            else
+            {
+                throw new Exception($"SendMessageTo: SessionID {sessionID} not found.");
+            }
+        }
+
+        void StartAccept(SocketAsyncEventArgs e)
+        {
+            e.AcceptSocket = null;
+            if (!_Socket.AcceptAsync(e))
+            {
+                CompletedAccept(this, e);
+            }
+        }
+
+        void CompletedAccept(object? sender, SocketAsyncEventArgs e)
+        {
+            var clientSocket = e.AcceptSocket;
+            var remoteEndPoint = clientSocket!.RemoteEndPoint as IPEndPoint;
+            if (remoteEndPoint == null)
+            {
+                return;
+            }
+            var context = GetSocketContext();
+            while (ConnectedContext.TryGetValue(NextSessionID, out var existingContext))
+            {
+                NextSessionID++;
+            }
+            ConnectedContext[NextSessionID] = context;
+            context.Reset(NextSessionID++, clientSocket, remoteEndPoint!.Address, (UInt16)remoteEndPoint.Port);
+            context.StartReceive();
+
+            OnConnect?.Invoke(context);
+
+            StartAccept(e);
+        }
+
+        void SocketDisconnected(SocketContext<T> context)
+        {
+            ConnectedContext.TryRemove(context.SessionID, out var _);
+            OnDisconnect?.Invoke(context);
+            ContextQueue.Push(context);
+
+            if (State == NetworkState.Client)
+            {
+                Disconnect();
+            }
+        }
+    }
+}
+```
+#### 주요 메서드
+**클라이언트**
+- `void Connect(IPAddress ip, UInt16 port)`: 해당 주소로 접속을 합니다.
+- `void Disconnect()`: 연결된 접속을 해제합니다. 
+- `void SendMessage(T message)`: 메시지를 송신합니다. 
+
+**서버**
+- `void OpenServer(IPEndPoint endPoint)`: 파라미터의 endPoint로 소켓을 열어 클라이언트들의 접속을 받기 시작합니다.
+- `void CloseServer()`: 서버를 닫습니다. 
+- `void SendMessageTo(UInt32 sessionID, T message)`: 특정 세션번호를 향해 메시지를 송신합니다. 만약에 해당 세션이 죽었으면 에러를 일으킵니다. 
+- `event Action<SocketContext<T>>? OnConnect`: 클라이언트가 접속했을 때 호출하는 이벤트입니다. 서버측에서 클라이언트 접속에 따른 처리를 하기 위해 제공합니다. 
+- `event Action<SocketContext<T>>? OnDisconnect`: 접속이 끊겼을 때 호출하는 이벤트입니다. 클라이언트 측에서도 서버와의 접속이 끊겼을 때 대응하기 위해 사용할 수 있습니다.
+
+**일반**
+- `SocketContext<T> GetSocketContext()`: 연결된 소켓을 관리하기 위한 SocketContext를 하나 받습니다. 풀링을 사용합니다. 
+- `void SetReceiveBufferSize(int size)`: SocketContext에서 사용할 수신 버퍼 사이즈를 설정합니다. 기본값은 메시지 최대 크기의 *10입니다. 수신 버퍼 사이즈를 변경하면 내부적으로 SocketContext에서 사용하는 버퍼 크기도 변경해줘야 하는데 구현되지 않았습니다. 
+- `bool IsMessageAvailable()`: 수신 메시지 큐에 메시지가 존재하는지 확인합니다. 
+- `T GetMessage(out SocketContext<T> context, CancellationToken cancellationToken = default)`:  
+메시지큐에서 메시지 하나를 동기적으로 받습니다. 서버측에서 어떤 클라이언트로부터 수신된 메시지인지 구분하기 위해 context를 추가적으로 받습니다. 
+
+### 3. SocketContext
+- 연결된 소켓과의 송수신을 처리하기 위한 클래스입니다. 직접적으로 바이트 스트림을 처리하며 안정적인 송수신을 담당합니다. 
+```c#
+using NetworkController.Message;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+
+namespace NetworkController
+{
+    public class SocketContext<T> where T : BaseMessage, IMessageParser<T>
+    {
+        Socket? Socket = null;
+        SocketAsyncEventArgs SendArgs;
+        SocketAsyncEventArgs RecvArgs;
+
+        public UInt32 SessionID;
+        public IPAddress? RemoteAddress = null;
+        public UInt16 RemotePort = 0;
+
+        byte[] RecvBuf;
+        int RecvBufOffset = 0;
+        int RecvBufDataSize = 0;
+
+        byte[] SendBuf;
+        int SendBufDataSize = 0;
+        bool IsSending;
+        bool IsConnected = false;
+        ConcurrentQueue<T> SendMessageQueue = new();
+        T? MessageForSend;
+
+        public event Action<SocketContext<T>, T>? OnReceiveMessage;
+        public event Action<SocketContext<T>>? OnDisconnect;
+
+        public SocketContext(Int32 bufferSize)
+        {
+            RecvBuf = new byte[bufferSize];
+            SendBuf = new byte[bufferSize];
+            SendArgs = new();
+            RecvArgs = new();
+
+            SendArgs.UserToken = this;
+            SendArgs.Completed += (s, e) =>
+            {
+                this.CompletedSend(e.BytesTransferred);
+            };
+            RecvArgs.UserToken = this;
+            RecvArgs.Completed += (s, e) =>
+            {
+                this.CompletedReceive(e.BytesTransferred);
+            };
+
+            SendArgs.SetBuffer(SendBuf, 0, 0);
+            RecvArgs.SetBuffer(RecvBuf, 0, RecvBuf.Length);
+        }
+
+        public void Reset(UInt32 sessionID, Socket socket, IPAddress ip, UInt16 port)
+        {
+            if (Interlocked.CompareExchange(ref IsConnected, true, false) == true)
+            {
+                throw new Exception("Already Connected");
+            }
+            SessionID = sessionID;
+            Socket = socket;
+            RemoteAddress = ip;
+            RemotePort = port;
+
+            RecvBufOffset = 0;
+            RecvBufDataSize = 0;
+            SendBufDataSize = 0;
+        }
+
+        public void Disconnect()
+        {
+            if (Interlocked.CompareExchange(ref IsConnected, false, true) == false)
+            {
+                return;
+            }
+            Socket!.Shutdown(SocketShutdown.Both);
+            Socket!.Close();
+            OnDisconnect?.Invoke(this);
+        }
+
+        public void StartReceive()
+        {
+            RecvArgs.SetBuffer(RecvBuf, RecvBufOffset, RecvBuf.Length - (RecvBufOffset + RecvBufDataSize));
+
+            if (!Socket!.ReceiveAsync(RecvArgs))
+            {
+                CompletedReceive(RecvArgs.BytesTransferred);
+            }
+        }
+
+        void CompletedReceive(int bytesTransferred)
+        {
+            while (true)
+            {
+                if (bytesTransferred <= 0)
+                {
+                    Disconnect();
+                    return;
+                }
+
+                RecvBufDataSize += bytesTransferred;
+
+                while (true)
+                {
+                    int parsed = T.Parse(RecvBuf, RecvBufDataSize, out T? message);
+
+                    if (parsed < 0)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Wrong data received...");
+                        Console.ForegroundColor = ConsoleColor.White;
+
+                        Disconnect();
+                        return;
+                    }
+
+                    if (message == null)
+                    {
+                        break;
+                    }
+
+                    OnReceiveMessage?.Invoke(this, message);
+
+                    RecvBufOffset += parsed;
+                    RecvBufDataSize -= parsed;
+                }
+
+                // 수신한 데이터가 모두 파싱되어 비어있으면 offset 자동으로 0으로 옮겨줌 
+                if (RecvBufDataSize == 0)
+                {
+                    RecvBufOffset = 0;
+                }
+                // 버퍼에 메시지 하나를 수신할 공간이 부족하면 현재 유효 데이터를 앞으로 옮기고 오프셋 이동
+                else if (RecvBuf.Length - (RecvBufOffset + RecvBufDataSize) < T.GetMaxSize())
+                {
+                    Console.WriteLine($"{RecvBuf.Length}, {RecvBufOffset}, {RecvBufDataSize}");
+                    Buffer.BlockCopy(RecvBuf, RecvBufOffset, RecvBuf, 0, RecvBufDataSize);
+                    RecvBufOffset = RecvBufDataSize;
+                }
+
+                RecvArgs.SetBuffer(
+                    RecvBufOffset + RecvBufDataSize,
+                    RecvBuf.Length - (RecvBufOffset + RecvBufDataSize)
+                );
+
+                if (Socket!.ReceiveAsync(RecvArgs))
+                    return;
+
+                bytesTransferred = RecvArgs.BytesTransferred;
+            }
+        }
+
+        public void SendMessage(T message)
+        {
+            SendMessageQueue.Enqueue(message);
+
+            if (Interlocked.CompareExchange(ref IsSending, true, false) == false)
+            {
+                TrySend();
+            }
+        }
+
+        void TrySend()
+        {
+            while (true)
+            {
+                if (MessageForSend != null && MessageForSend.GetSize() < SendBuf.Length - SendBufDataSize)
+                {
+                    MessageForSend.Serialize(SendBuf.AsSpan(SendBufDataSize));
+                    SendBufDataSize += MessageForSend.GetSize();
+                    MessageForSend = null;
+                }
+                if (MessageForSend == null)
+                {
+                    while (SendMessageQueue.TryDequeue(out var msg))
+                    {
+                        int size = msg.GetSize();
+                        if (size > SendBuf.Length - SendBufDataSize)
+                        {
+                            MessageForSend = msg;
+                            break;
+                        }
+
+                        msg.Serialize(SendBuf.AsSpan(SendBufDataSize));
+                        SendBufDataSize += size;
+                    }
+                }
+
+                if (SendBufDataSize == 0)
+                {
+                    Interlocked.Exchange(ref IsSending, false);
+
+                    if (!SendMessageQueue.IsEmpty && Interlocked.CompareExchange(ref IsSending, true, false) == false)
+                    {
+                        continue;
+                    }
+                    return;
+                }
+
+                SendArgs.SetBuffer(SendBuf, 0, SendBufDataSize);
+
+                bool pending = Socket!.SendAsync(SendArgs);
+                if (pending)
+                {
+
+                    return;
+                }
+
+                // 송신이 즉시 완료되면 계속 루프 돌면서 송신 
+                SendBufDataSize -= SendArgs.BytesTransferred;
+
+                if (SendBufDataSize > 0)
+                {
+                    Buffer.BlockCopy(SendBuf, SendArgs.BytesTransferred, SendBuf, 0, SendBufDataSize);
+                }
+            }
+        }
+
+        void CompletedSend(int bytesTransferred)
+        {
+            SendBufDataSize -= bytesTransferred;
+
+            if (SendBufDataSize > 0)
+            {
+                Buffer.BlockCopy(SendBuf, bytesTransferred, SendBuf, 0, SendBufDataSize);
+            }
+
+            TrySend();
+        }
+    }
+}
+```
+#### 주요 메서드
+- `public void Reset(UInt32 sessionID, Socket socket, IPAddress ip, UInt16 port)`:  
+소켓 컨텍스트를 새로 초기화합니다. 
+- `public void StartReceive()`: 할당된 소켓으로부터 수신을 처리하기 시작합니다.
+- `public void SendMessage(T message)`: 할당된 소켓에 메시지를 송신합니다. 내부적으로 송신 큐에 메시지를 큐잉하고서 차레대로 송신합니다. 
+- `public void Disconnect()`: 연결을 해제합니다. 
+- `public event Action<SocketContext<T>, T>? OnReceiveMessage`: 수신한 바이트스트림을 파싱성공하여 메시지를 완성하면 해당 이벤트를 호출합니다.
+- `public event Action<SocketContext<T>>? OnDisconnect`: 소켓 연결이 끊겼을 때 해당 이벤트를 호출합니다. 
+
+# 3. 네트워크 라이브러리를 활용한 채팅 서버
+- 네트워크 라이브러리가 잘 작동하는지 확인하기 위한 채팅 서버를 만들어봅니다. 
+
+**주요 동작**
+- **하트비트**: 클라이언트가 1초마다 서버에 하트비트 메시지를 보냅니다. 서버는 접속된 클라이언트들을 확인해 근 5초간에 하트비트가 도착하지 않은 클라이언트와의 연결을 해제합니다. 
+- **로그인**: 이름을 입력해 로그인을 합니다. 서버에 동일한 이름으로 이미 로그인된 유저가 존재할 경우 거부됩니다. 
+- **채팅**: 로그인된 유저가 채팅 메시지를 보냈을 경우, 해당 채팅을 로그인된 유저들에게 전파합니다. 로그인 되지 않은 유저가 보냈을 경우 무시됩니다. 
+## 클라이언트 코드 
+```c#
+using NetworkController;
+using NetworkController.Message;
+using System.Net;
+
+namespace GameClientConsole
+{
+    internal class Program
+    {
+
+        static void Main(string[] args)
+        {
+            Console.InputEncoding = System.Text.Encoding.UTF8;
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+            NetworkController<ProtobufMessage> Netcon = new NetworkController<ProtobufMessage>();
+            Netcon.OnDisconnect += (context) =>
+            {
+                Console.WriteLine($"Server disconnected");
+            };
+
+            var chat = new Protos.ChattingMessage
+            {
+                Message = "hello, world!!"
+            };
+
+            _ = Task.Run(() =>
+            {
+                while (true)
+                {
+                    var message = Netcon.GetMessage();
+                    if (message.Payload is Protos.ChattingMessage chatMessage)
+                    {
+                        Console.WriteLine($"[{chatMessage.Username}]: {chatMessage.Message}");
+                    }
+                    else if (message.Payload is Protos.SystemMessage)
+                    {
+
+                    }
+                }
+            });
+
+            bool sendHeartbeat = false;
+            _ = Task.Run(() =>
+            {
+                while (true)
+                {
+                    Thread.Sleep(1000);
+                    if (sendHeartbeat)
+                    {
+                        Netcon.SendMessage(new ProtobufMessage(new Protos.SystemMessage
+                        {
+                            Heartbeat = new Protos.Heartbeat
+                            {
+                                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                            }
+                        }
+                        , ProtobufMessage.OpCode.System));
+                    }
+                }
+            });
+
+            PrintCommand();
+            while (true)
+            {
+                var input = Console.ReadLine();
+                chat.Message = String.IsNullOrEmpty(input) ? "blank" : input;
+
+                var message = new ProtobufMessage(chat, ProtobufMessage.OpCode.Chatting);
+                switch (input)
+                {
+                    case "test":
+                        for (int i = 0; i < 1000; ++i)
+                        {
+                            Netcon.SendMessage(message);
+                            continue;
+                        }
+                        break;
+                    case "quit":
+                        sendHeartbeat = false;
+                        Netcon.Disconnect();
+                        break;
+                    case "connect":
+                        Netcon.Connect(IPAddress.Parse("127.0.0.1"), 5000);
+                        sendHeartbeat = true;
+                        break;
+                    case "system":
+                        Netcon.SendMessage(new ProtobufMessage(new Protos.SystemMessage
+                        {
+                            Heartbeat = new Protos.Heartbeat
+                            {
+                                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                            }
+                        }
+                        , ProtobufMessage.OpCode.System));
+                        break;
+                    case "login":
+                        Console.Write("Enter username: ");
+                        var username = Console.ReadLine();
+                        Netcon.SendMessage(new ProtobufMessage(new Protos.SystemMessage
+                        {
+                            LoginRequest = new Protos.LoginRequest
+                            {
+                                UserName = string.IsNullOrEmpty(username) ? "Guest" : username
+                            }
+                        },
+                        ProtobufMessage.OpCode.System));
+                        break;
+                    case "h":
+                        if (sendHeartbeat)
+                        {
+                            Console.WriteLine("Stop sending heartbeat.");
+                            sendHeartbeat = false;
+                        }
+                        else
+                        {
+                            Console.WriteLine("Start sending heartbeat.");
+                            sendHeartbeat = true;
+                        }
+                        break;
+
+                    default:
+                        if (Netcon.IsConnected())
+                        {
+                            Netcon.SendMessage(message);
+                        }
+                        else
+                        {
+                            PrintCommand();
+                        }
+                        break;
+                }
+            }
+        }
+
+        static void PrintCommand()
+        {
+            Console.WriteLine("Client Command List: connect, system, test, login, h, quit");
+        }
+    }
+}
+```
+### 설명
+- NetworkController을 통해 서버에 연결하고 각종 메시지를 송신하는 간단한 예제 프로그램입니다. 
+- 시작시에 계속 돌아가는 Task 2개를 생성합니다. 하나는 Netcon으로부터 메시지를 받아 처리를하고(단순 출력), 하나는 주기적으로 하트비트 메시지를 송신합니다. 
+
+**입력 명령어에 따른 동작**
+- `connect`: 서버에 접속합니다. 
+- `quit`: 서버와의 연결을 해제합니다. 
+- `system`: 하트비트 메시지(시스템 메시지)를 보냅니다.
+- `h`: 하트비트 플래그를 끄고 켭니다. 하트비트 메시지를 보내지 않을 시 자동으로 연결이 끊기는 것을 볼 수 있습니다. 
+- `login`: 추가적으로 이름을 입력해 로그인 요청 메시지를 보냅니다.
+- `test`: 서버한테 메시지를 막 날립니다.  
+- `default`: 서버와의 연결이 수립돼있으면 채팅 메시지를 보냅니다.  
+
+**채팅 메시지 수신 시** 송신자의 이름과 채팅 내용을 콘솔에 출력합니다. 
+
+## 서버측 구현(Main함수) 및 주요 동작 흐름 설명
+### 구현 의도 
+- 학습용 프로젝트이므로 단순하게 구현하였습니다. Server는 단순히 Start(Run), Stop 두 가지 동작만 수행합니다. 
+- 서버가 동작하면, 자동으로 NetworkController(이하 NetCon)을 이용하여 서버를 열고(접속을 받고), 메시지를 하나씩 받아서 동작합니다. 
+- 소켓 동작상 메시지 송수신(send, recv)없이 연결, 해제에 대응하기 위해 OnConnected, OnDisconnect 이벤트를 등록하여 연결 자체를 관리합니다. 즉 서버는 소켓 연결, 메시지 수신, 소켓 연결 해제 3가지 상황에 대해 수동적으로 동작합니다.
+- 서버는 연결을 NetCon이 제공하는 SessionID로 연결을 구분합니다. 또한 서버측에서도 자체적으로 세션에 대한 상태를 관리하기 위해 ClientSession이라는 클래스를 두었습니다.
+- 수신한 메시지는 메시지 분배기(MessageProcessor)가 각 메시지 핸들러(SystemMessageHandler, ChattingMessageHandler)에 메시지를 분배합니다. 
+- 각 핸들러는 최종적으로 다시 서버 객체를 참조해 서버 객체가 지니고 있는 서비스들의 메서드를 사용합니다.
+![서버다이어그램](4.JPG)
+
+```c#
+static async Task Main(string[] args)
+{
+    Console.InputEncoding = System.Text.Encoding.UTF8;
+    Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+    Server server = new();
+    bool running = true;
+
+    PrintCommand();
+    while (running)
+    {
+        var input = Console.ReadLine();
+        if (string.IsNullOrEmpty(input))
+        {
+            continue;
+        }
+        input.ToLower();
+
+        switch (input)
+        {
+            case "start":
+                server.Start();
+                break;
+            case "stop":
+                await server.Stop();
+                break;
+            case "quit":
+                running = false;
+                break;
+            default:
+                PrintCommand();
+                break;
+        }
+    }
+
+    await server.Stop();
+}
+
+static void PrintCommand()
+{
+    Console.WriteLine("Server Command List: start, stop, quit");
+}
+```
+- 단순하게 서버를 만들고서 start, stop 할 수 있게만 만든 예제입니다. 
+
+## Server 클래스
+```c#
+using NetworkController.Message;
+using NetworkController;
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Threading.Tasks;
+using System.Collections.Concurrent;
+using GameServer.MessageProcessor;
+using GameServer.Service;
+using Protos;
+
+namespace GameServer
+{
+    internal class Server
+    {
+        NetworkController<ProtobufMessage> Netcon;
+        Task? ServerTask;
+        Task HeartbeatTask;
+        int CheckInterval = 5000; // 5sec
+        bool IsRunning = false;
+        CancellationTokenSource token = new();
+
+        MessageProcessor.MessageProcessor Processor;
+        ConcurrentDictionary<UInt32, ClientSession> Clients = new();
+
+        public event Action<ClientSession>? OnConnect;
+        public event Action<ClientSession>? OnDisconnect;
+
+        public LoginService LoginService;
+        public ChattingService ChattingService;
+
+        public Server()
+        {
+            Netcon = new NetworkController<ProtobufMessage>();
+            Netcon.OnConnect += (context) =>
+            {
+                OnConnected(context);
+            };
+
+            Netcon.OnDisconnect += (context) =>
+            {
+                OnDisconnected(context);
+            };
+            Processor = new(this);
+
+            LoginService = new(this);
+            ChattingService = new(this);
+
+            HeartbeatTask = new Task(async () =>
+            {
+                Console.WriteLine("Checking heartbeat");
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(CheckInterval);
+                    CheckHeartbeat();
+                }
+                Console.WriteLine("Heartbeat task terminated");
+            });
+        }
+
+        public void Start()
+        {
+            Netcon.OpenServer(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 5000));
+            Console.WriteLine($"Server start running, IP: 127.0.0.1, Port: 5000");
+            IsRunning = true;
+            token = new();
+            HeartbeatTask.RunSynchronously();
+            ServerTask = Task.Run(() =>
+            {
+                Console.WriteLine("Server start receiving message");
+                try
+                {
+                    while (!token.Token.IsCancellationRequested)
+                    {
+                        var message = Netcon.GetMessage(out var context, token.Token);
+                        if (TryGetSession(context.SessionID, out var session))
+                        {
+                            if (session == null)
+                            {
+                                continue;
+                            }
+                            Processor.HandleMessage(session, message);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    Console.WriteLine("Server task terminaterd");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"ServerTask error: {ex}");
+                }
+                Console.WriteLine("Server work terminated");
+            });
+        }
+
+        public async Task Stop()
+        {
+            if (!IsRunning)
+            {
+                return;
+            }
+
+            Netcon.CloseServer();
+            IsRunning = false;
+            token.Cancel();
+            await ServerTask!;
+        }
+
+        void OnConnected(SocketContext<ProtobufMessage> context)
+        {
+            if (Clients.TryGetValue(context.SessionID, out var session))
+            {
+                Console.WriteLine("Server.OnConnected: ???");
+                context.Disconnect();
+                return;
+            }
+
+
+            var newSession = new ClientSession(context.SessionID);
+            if (!Clients.TryAdd(newSession.SessionID, newSession))
+            {
+                Console.WriteLine("Server.OnConnected: !!!");
+            }
+
+            Console.WriteLine($"New client connected. SessionID:{context.SessionID}, EndPoint: {context.RemoteAddress}:{context.RemotePort}");
+
+            OnConnect?.Invoke(newSession);
+        }
+
+        void OnDisconnected(SocketContext<ProtobufMessage> context)
+        {
+            if (!Clients.TryGetValue(context.SessionID, out var session))
+            {
+                Console.WriteLine("Server.OnDisconnected: ???");
+                context.Disconnect();
+                return;
+            }
+
+            OnDisconnect?.Invoke(session);
+
+            Clients.TryRemove(context.SessionID, out var sesion);
+
+            Console.WriteLine($"Client disconnected. SessionID:{context.SessionID}, EndPoint: {context.RemoteAddress}:{context.RemotePort}");
+        }
+
+        void CheckHeartbeat()
+        {
+            var copy = Clients.Values.ToArray();
+            var currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            foreach (var c in copy)
+            {
+                if (c.LastActiveTime + CheckInterval < currentTime)
+                {
+                    Console.WriteLine($"SessionID: {c.SessionID}{(c.IsAuthenticated ? " " + c.UserName : "")} has no response long time. Disconnect");
+                    Netcon.Disconnect(c.SessionID);
+                }
+            }
+        }
+
+        public bool TryGetSession(UInt32 sessionID, out ClientSession? session)
+        {
+            var ret = Clients.TryGetValue(sessionID, out session);
+            return ret;
+        }
+
+        public void SendMessage(ClientSession session, ProtobufMessage message)
+        {
+            Netcon.SendMessageTo(session.SessionID, message);
+        }
+    }
+}
+```
+
+### 설명
+- 소켓으로 접속만 된 클라이언트들을 관리하기 위해 NetCon에 OnConnected, OnDisconnect 이벤트를 붙여 관리합니다. 
+- 서버가 시작하면 바로 Netcon으로부터 메시지를 받아 MessageProcessor로 보내는 Task와 Heartbeat Task를 시작합니다. 
+- Hearbeat Task는 최근 5초간 메시지 수신이 없던 클라이언트와의 연결을 해제합니다. 클라이언트측에서는 1초마다 Hearbeat를 보내도록 돼있습니다. Hearbeat 메시지를 받으면 자동으로 LastActiveTime을 갱신해줍니다. 
+- 여러가지 Service들을 소유하고 있습니다. MessageHandler가 이 서버 객체의 Service들에 임의로 접근해서 사용을 합니다. 
+
+## ClientSession
+```c#
+internal class ClientSession
+{
+    public UInt32 SessionID;
+    public string UserName = "";
+    public bool IsAuthenticated => !string.IsNullOrEmpty(UserName);
+    public Int64 LastActiveTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    public ClientSession(UInt32 sessionID)
+    {
+        SessionID = sessionID;
+    }
+}
+```
+### 설명
+- 연결된 클라이언트와의 세션을 관리하기 위한 클래스입니다. 단순하게 UserName이 ""이 아니면 로그인된 상태(Authenticated)라고 봅니다. 
+- 최근 메시지 수신 시간(LastActiveTime)을 저장해 Heartbeat를 관리합니다. 
+
+## MessageProcessor(Handler) 클래스
+```c#
+using NetworkController.Message;
+using Protos;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace GameServer.MessageProcessor
+{
+    internal class MessageProcessor
+    {
+        Server Server;
+        SystemMessageHandler SystemHandler;
+        ChattingMessageHandler ChattingHandler;
+        public MessageProcessor(Server server) 
+        {
+            Server = server;
+            SystemHandler = new SystemMessageHandler(server);
+            ChattingHandler = new ChattingMessageHandler(server);
+        }
+
+        public void HandleMessage(ClientSession session, ProtobufMessage message)
+        {
+            if (message != null)
+            {
+                session.LastActiveTime = message.Header.Timestamp;
+                switch ((ProtobufMessage.OpCode)message.Header.OpCode)
+                {
+                    case ProtobufMessage.OpCode.Chatting:
+                        ChattingHandler.HandleMessage(session, message);
+                        break;
+                    case ProtobufMessage.OpCode.System:
+                        SystemHandler.HandlerMessage(session, message);
+                        break;
+                }
+            }
+        }
+    }
+}
+```
+
+### 핸들러 예시) SystemMessageHandler 
+```c#
+using NetworkController.Message;
+using Protos;
+using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace GameServer.MessageProcessor
+{
+    internal class SystemMessageHandler
+    {
+        Server Server;
+
+        public SystemMessageHandler(Server server)
+        {
+            Server = server;
+        }
+
+        public void HandlerMessage(ClientSession session, ProtobufMessage message)
+        {
+            if (message.Payload is not SystemMessage msg)
+            {
+                Console.WriteLine("Invalid ChattingMessage payload");
+                return;
+            }
+
+            switch (msg!.PayloadCase)
+            {
+                case SystemMessage.PayloadOneofCase.LoginRequest:
+                    HandleLogin(session, msg.LoginRequest);
+                    break;
+
+                case SystemMessage.PayloadOneofCase.Heartbeat:
+                    HandleHeartbeat();
+                    break;
+            }
+        }
+
+
+        void HandleLogin(ClientSession session, LoginRequest loginRequest)
+        {
+            Server.LoginService.Login(session, loginRequest);
+        }
+
+        void HandleHeartbeat()
+        {
+        }
+    }
+}
+```
+
+### 설명
+- MessageProcessor가 메시지 종류에 알맞은 MessageHandler로 메시지를 전달합니다. 
+- 각 MessageHandler는 내부적으로 메시지에 알맞은 동작을 처리하고 Server 객체가 지니고 있는 Service들에 접근해 알맞은 서비스들을 사용합니다. 
+- 현재 동작구현 자체는 매우 날 것으로 돼있는 상태입니다. 
+
+## Service 
+- 서버의 핵심 기능을 담당합니다. 간단한 채팅서버를 위해 현재 로그인 서비스와 채팅 서비스 둘 만 구현 돼 있습니다. 
+### LoginService
+```c#
+using Protos;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Text;
+
+namespace GameServer.Service
+{
+    internal class LoginService
+    {
+        Server Server;
+        ConcurrentDictionary<string, ClientSession> LoginedClients = new();
+
+        public LoginService(Server server)
+        {
+            Server = server;
+            Server.OnDisconnect += (session) =>
+            {
+                Logout(session);
+            };
+        }
+
+        public bool Login(ClientSession session, LoginRequest requestMessage)
+        {
+            var username = requestMessage.UserName;
+
+            if (LoginedClients.ContainsKey(username))
+            {
+                return false;
+            }
+            session.UserName = username;
+
+            Console.WriteLine($"User {username} logged in.");
+
+            return LoginedClients.TryAdd(username, session);
+        }
+
+        public void Logout(ClientSession session)
+        {
+            if (!session.IsAuthenticated)
+            {
+                return;
+            }
+            LoginedClients.TryRemove(session.UserName, out var _);
+            Console.WriteLine($"User {session.UserName} logged out.");
+            session.UserName = string.Empty;
+        }
+
+        public IReadOnlyCollection<ClientSession> GetLoggedInSessionsSnapshot()
+        {
+            return LoginedClients.Values.ToArray();
+        }
+    }
+}
+```
+- 처음 생성시에 Server에 연결해제 이벤트를 등록하여 클라이언트가 연결해제시 자동으로 로그아웃이 됩니다. 
+- 현재 로그인된 유저들에 대해 검사하여 중복 로그인(중복 닉네임)을 검사해 로그인 허용/거부를 합니다. 
+- 현재 로그인 되어있는 유저 목록을 리턴하는 함수가 있습니다. 
+
+### ChattingService
+```c#
+using NetworkController.Message;
+using Protos;
+
+namespace GameServer.Service
+{
+    internal class ChattingService
+    {
+        Server Owner;
+        public ChattingService(Server owner)
+        {
+            Owner = owner;
+        }
+
+        public void ProcessChatting(ClientSession session, ChattingMessage message)
+        {
+            var targets = Owner.LoginService.GetLoggedInSessionsSnapshot();
+            var chat = new ChattingMessage
+            {
+                Username = session.UserName,
+                Message = message.Message
+            };
+            var msg = new ProtobufMessage(chat, ProtobufMessage.OpCode.Chatting);
+
+            foreach (var target in targets)
+            {
+                Owner.SendMessage(target, msg);
+            }
+        }
+    }
+}
+```
+- 채팅 메시지를 보낸 사람이 로그인 된 사람이라면 해당 메시지를 전체 로그인된 유저들에게 전파합니다. 
+
+## 시연 영상
+- 추가 예정
+
