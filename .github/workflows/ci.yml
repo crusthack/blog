@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore Blog.slnx
+      - run: dotnet format Blog.slnx --verify-no-changes --no-restore
+      - run: dotnet test Blog.slnx --configuration Release --no-restore
+      - name: Verify production publish
+        shell: bash
+        run: |
+          dotnet publish apps/backend/Blog.Api.csproj \
+            --configuration Release \
+            --no-restore \
+            --output artifacts/backend
+          test ! -f artifacts/backend/appsettings.Development.json
+          ! grep -R --fixed-strings --files-with-matches localdev artifacts/backend
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:frontend
+      - run: npm run build:frontend
+        env:
+          API_SERVER_URL: http://backend:8080

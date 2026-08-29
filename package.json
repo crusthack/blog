@@ -1,0 +1,19 @@
+{
+  "name": "blog",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/frontend"
+  ],
+  "scripts": {
+    "dev:backend": "dotnet run --project apps/backend/Blog.Api.csproj --launch-profile http",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "lint:frontend": "npm run lint --workspace=frontend",
+    "start:frontend": "npm run start --workspace=frontend",
+    "test:backend": "dotnet test Blog.slnx",
+    "deploy:build": "docker compose -f compose.production.yaml build",
+    "deploy:up": "docker compose -f compose.production.yaml up -d",
+    "deploy:down": "docker compose -f compose.production.yaml down"
+  }
+}

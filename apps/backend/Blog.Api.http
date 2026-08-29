@@ -1,0 +1,46 @@
+@Blog.Api_HostAddress = http://localhost:5268
+
+GET {{Blog.Api_HostAddress}}/api/setup/status
+Accept: application/json
+
+###
+
+POST {{Blog.Api_HostAddress}}/api/setup/owner
+Content-Type: application/json
+
+{
+  "setupCode": "replace-with-your-setup-code",
+  "username": "owner",
+  "email": "owner@example.com",
+  "password": "replace-with-a-strong-password"
+}
+
+###
+
+POST {{Blog.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "owner",
+  "password": "replace-with-your-owner-password"
+}
+
+###
+
+GET {{Blog.Api_HostAddress}}/api/auth/me
+
+###
+
+GET {{Blog.Api_HostAddress}}/api/posts
+
+###
+
+POST {{Blog.Api_HostAddress}}/api/posts
+Content-Type: application/json
+
+{
+  "title": "첫 번째 글",
+  "description": "기본 Markdown 포스트",
+  "content": "# Hello\n\nMarkdown으로 작성한 본문입니다.",
+  "publish": false
+}

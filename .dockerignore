@@ -1,0 +1,11 @@
+.git
+.gitignore
+.next
+node_modules
+**/bin
+**/obj
+**/runtime
+apps/backend/appsettings.Development.json
+secrets
+tests
+*.log
