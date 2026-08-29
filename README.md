@@ -20,7 +20,7 @@ apps/
   backend/   ASP.NET Core Web API
 deploy/
   nginx/     운영 reverse proxy 설정
-  scripts/   Setup Secret 생성과 운영 사전 점검
+  scripts/   Setup Secret 생성, 운영 사전 점검과 runtime 백업
 tests/       Backend 통합 테스트
 ```
 

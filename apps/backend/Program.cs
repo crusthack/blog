@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Blog.Api.Data;
 using Blog.Api.Models;
 using Blog.Api.Setup;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -12,9 +13,13 @@ builder.Configuration.AddEnvironmentVariables(prefix: "BLOG_");
 
 var runtimeDirectory = Path.Combine(builder.Environment.ContentRootPath, "runtime");
 Directory.CreateDirectory(runtimeDirectory);
+var dataProtectionDirectory = Path.Combine(runtimeDirectory, "data-protection");
+Directory.CreateDirectory(dataProtectionDirectory);
 
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionDirectory));
 
 if (builder.Environment.IsDevelopment())
 {
@@ -127,6 +132,10 @@ if (app.Environment.IsDevelopment())
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapGet("/api/health", async (BlogDbContext db, CancellationToken cancellationToken) =>
+    await db.Database.CanConnectAsync(cancellationToken)
+        ? Results.Ok(new { Status = "Healthy" })
+        : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 app.MapControllers();
 
 await using (var scope = app.Services.CreateAsyncScope())

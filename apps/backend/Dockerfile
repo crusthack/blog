@@ -15,9 +15,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 COPY --from=build /app/publish ./
-RUN mkdir -p /app/runtime && chown -R $APP_UID:$APP_UID /app/runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/runtime \
+    && chown -R $APP_UID:$APP_UID /app/runtime
 
-ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
 USER $APP_UID
 ENTRYPOINT ["dotnet", "Blog.Api.dll"]
