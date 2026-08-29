@@ -113,6 +113,8 @@ BLOG_BOOTSTRAP__TOKENFILE=/run/secrets/owner_bootstrap_token
 
 첫 배포의 전체 순서와 수동 확인 항목은 [deploy/FIRST_DEPLOY.md](deploy/FIRST_DEPLOY.md)에 정리되어 있습니다.
 
+빈 폴더의 기본 프로젝트 생성부터 Windows 개발, Docker 검증, EC2 첫 배포와 운영 명령까지 따라 하는 교안은 [docs/PROJECT_SETUP_AND_DEPLOYMENT_GUIDE.md](docs/PROJECT_SETUP_AND_DEPLOYMENT_GUIDE.md)를 참고합니다.
+
 ## 검증
 
 ```bash

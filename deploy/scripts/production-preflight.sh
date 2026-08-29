@@ -11,15 +11,17 @@ command -v docker >/dev/null 2>&1 || {
     exit 1
 }
 
-if [ ! -f "$secret_file" ]; then
-    echo "Missing Setup Code. Run deploy/scripts/create-setup-secret.sh first." >&2
-    exit 1
-fi
+if grep -q "BLOG_BOOTSTRAP__TOKENFILE" "$compose_file"; then
+    if [ ! -f "$secret_file" ]; then
+        echo "Missing Setup Code. Run deploy/scripts/create-setup-secret.sh first." >&2
+        exit 1
+    fi
 
-secret_length=$(tr -d '\r\n' < "$secret_file" | wc -c | tr -d ' ')
-if [ "$secret_length" -lt 64 ]; then
-    echo "The Setup Code must contain at least 64 hexadecimal characters." >&2
-    exit 1
+    secret_length=$(tr -d '\r\n' < "$secret_file" | wc -c | tr -d ' ')
+    if [ "$secret_length" -lt 64 ]; then
+        echo "The Setup Code must contain at least 64 hexadecimal characters." >&2
+        exit 1
+    fi
 fi
 
 if grep -q "DevelopmentOwner" "$compose_file"; then
