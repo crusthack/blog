@@ -132,7 +132,9 @@ deploy:down       운영 Compose 종료
 - `apps/backend/Controllers`: Setup, 로그인, 게시글 API
 - `apps/frontend/src/lib/contracts.ts`: Frontend가 사용하는 API DTO
 - `apps/frontend/src/components`: 로그인, Setup, Markdown 작성 UI
-- `compose.production.yaml`: 운영 컨테이너와 영속 볼륨
+- `compose.production.yaml`: 공통 운영 컨테이너와 영속 볼륨
+- `compose.bootstrap.yaml`: 최초 Owner 생성 때만 사용하는 Setup Secret
+- `compose.cloudflare.yaml`: Cloudflare Origin HTTPS 인증서와 443 포트
 - `deploy/nginx/nginx.conf`: `/api`와 Frontend reverse proxy
 - `.github/workflows/ci.yml`: GitHub Actions 검증
 
@@ -205,6 +207,7 @@ Remove-Item Env:API_SERVER_URL
 dotnet format Blog.slnx --verify-no-changes --no-restore
 dotnet test Blog.slnx --configuration Release --no-restore
 docker compose -f compose.production.yaml config --quiet
+docker compose -f compose.production.yaml -f compose.bootstrap.yaml config --quiet
 ```
 
 모두 종료 코드 0으로 끝나야 한다. 테스트가 실패하면 배포로 넘어가지 않는다.
@@ -221,7 +224,7 @@ Git Bash를 열고 실행한다.
 cd /c/Users/Jin/Documents/blog/blog
 chmod +x deploy/scripts/*.sh
 deploy/scripts/create-setup-secret.sh
-deploy/scripts/production-preflight.sh
+deploy/scripts/production-preflight.sh --bootstrap
 ```
 
 생성된 `secrets/owner-bootstrap-token`은 절대로 커밋하거나 채팅에 붙여 넣지 않는다.
@@ -234,7 +237,7 @@ PowerShell에서 실행한다.
 
 ```powershell
 Set-Location C:\Users\Jin\Documents\blog\blog
-docker compose -f compose.production.yaml up -d --build
+docker compose -f compose.production.yaml -f compose.bootstrap.yaml up -d --build
 docker compose -f compose.production.yaml ps
 ```
 
@@ -435,7 +438,7 @@ git log -1 --oneline
 ```bash
 chmod +x deploy/scripts/*.sh
 deploy/scripts/create-setup-secret.sh
-deploy/scripts/production-preflight.sh
+deploy/scripts/production-preflight.sh --bootstrap
 ```
 
 Setup Code 확인이 필요할 때만 다음을 실행하고, 화면 공유나 셸 기록에 노출하지 않는다.
@@ -444,12 +447,31 @@ Setup Code 확인이 필요할 때만 다음을 실행하고, 화면 공유나 �
 sudo cat secrets/owner-bootstrap-token
 ```
 
-### 10.3 실행
+### 10.3 Cloudflare Origin 인증서 배치
+
+Cloudflare Dashboard의 `SSL/TLS > Origin Server > Create Certificate`에서 `crusthack.com`용 Origin CA 인증서를 발급한다. 인증서와 개인 키는 발급 화면에서 각각 한 번 복사해 다음 파일로 저장한다.
+
+```text
+secrets/cloudflare-origin.pem
+secrets/cloudflare-origin.key
+```
+
+EC2에서 파일 권한을 제한한다.
 
 ```bash
-docker compose -f compose.production.yaml up -d --build
+chmod 644 secrets/cloudflare-origin.pem
+chmod 600 secrets/cloudflare-origin.key
+deploy/scripts/production-preflight.sh --cloudflare --bootstrap
+```
+
+Cloudflare DNS 레코드는 프록시 상태를 유지한다. 새 origin 인증서가 정상 동작하기 전에는 기존 운영 사이트에 영향을 줄 수 있으므로 SSL/TLS 모드를 변경하지 않는다. 새 서버 검증 후 `Full (strict)`를 사용한다.
+
+### 10.4 실행
+
+```bash
+docker compose -f compose.production.yaml -f compose.cloudflare.yaml -f compose.bootstrap.yaml up -d --build
 docker compose -f compose.production.yaml ps
-curl --fail http://127.0.0.1/api/health
+curl --insecure --fail --resolve crusthack.com:443:127.0.0.1 https://crusthack.com/api/health
 ```
 
 세 서비스가 모두 `healthy`가 아니면 로그부터 확인한다.
@@ -463,15 +485,15 @@ free -h
 
 ## 11. 공개 HTTP 없이 최초 Owner 만들기
 
-HTTPS가 아직 없다면 Setup Code와 비밀번호를 공용 HTTP로 보내지 않는다. 보안 그룹은 22번만 허용한 채 SSH 터널을 사용한다.
+도메인을 새 EC2로 전환하기 전에는 SSH 터널로 새 Nginx의 HTTPS를 점검한다. Cloudflare Origin CA 인증서는 일반 브라우저가 직접 신뢰하지 않으므로 이 단계의 명령줄 점검에서는 `--insecure`를 사용하되, 실제 공개 서비스는 반드시 Cloudflare를 통과시킨다.
 
 Windows에서 기존 SSH 창과 별도로 다음을 실행한다.
 
 ```powershell
-ssh -i C:\Users\Jin\.ssh\blog-production.pem -L 8088:127.0.0.1:80 ubuntu@203.0.113.10
+ssh -i C:\Users\Jin\.ssh\blog-production.pem -L 8443:127.0.0.1:443 ubuntu@203.0.113.10
 ```
 
-이 SSH 연결을 유지하고 브라우저에서 `http://localhost:8088/setup`을 연다. EC2에서 생성한 Setup Code로 실제 Owner를 만든다. 이어서 다음을 확인한다.
+인증서 hostname과 브라우저 신뢰 문제 때문에 Owner 입력은 DNS를 새 서버로 전환하고 Cloudflare `Full (strict)` 연결이 확인된 뒤 `https://crusthack.com/setup`에서 수행하는 것이 가장 간단하다. 전환 전에 꼭 생성해야 한다면 로컬 hosts와 인증서 신뢰를 별도로 구성해야 하므로 공개 전환 직후 생성하는 절차를 권장한다.
 
 1. 실제 Owner 로그인
 2. Markdown 초안 작성
@@ -489,32 +511,13 @@ deploy/scripts/backup-runtime.sh
 ls -lh backups
 ```
 
-`compose.production.yaml`의 Backend에서 다음 항목을 제거한다.
-
-```yaml
-BLOG_BOOTSTRAP__TOKENFILE: /run/secrets/owner_bootstrap_token
-```
-
-```yaml
-secrets:
-  - owner_bootstrap_token
-```
-
-파일 맨 아래의 다음 항목도 제거한다.
-
-```yaml
-secrets:
-  owner_bootstrap_token:
-    file: ./secrets/owner-bootstrap-token
-```
-
-구성을 검증하고 Backend를 재생성한다.
+추적 파일을 수정하지 않는다. `compose.bootstrap.yaml`을 제외하고 Backend를 재생성한다.
 
 ```bash
-docker compose -f compose.production.yaml config --quiet
-docker compose -f compose.production.yaml up -d --force-recreate backend
+deploy/scripts/production-preflight.sh --cloudflare
+docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d --force-recreate backend
 docker compose -f compose.production.yaml ps
-curl --fail http://127.0.0.1/api/health
+curl --insecure --fail --resolve crusthack.com:443:127.0.0.1 https://crusthack.com/api/health
 ```
 
 Owner 로그인이 유지되고 `/setup` 재시도가 거부되는지 확인한 뒤 Setup Code를 삭제한다.
@@ -525,33 +528,20 @@ shred -u secrets/owner-bootstrap-token
 
 가상화된 스토리지에서는 `shred`가 물리 블록 삭제를 보장하지 않지만 파일 재사용과 우발적 노출을 방지하는 운영 절차로 사용한다. EBS 자체는 암호화된 상태여야 한다.
 
-> 서버에서 직접 수정한 Compose 파일은 다음 `git pull` 때 충돌할 수 있다. 장기적으로는 초기 Setup 전용 Compose override 파일을 별도로 두는 방식으로 개선한다.
-
 ## 13. HTTPS 공개 전환
 
-현재 저장소의 Nginx 설정은 HTTP까지만 제공한다. 실제 사이트를 공개하기 전에 아래 두 방식 중 하나를 선택해 별도의 변경으로 검증한다.
+이 저장소는 `compose.cloudflare.yaml`과 `deploy/nginx/nginx.cloudflare.conf`로 Cloudflare Origin HTTPS를 제공한다. Cloudflare Dashboard에서 다음을 확인한다.
 
-### 방식 A: Cloudflare에서 TLS 종료
-
-- DNS를 Cloudflare proxy 상태로 연결한다.
-- SSL/TLS 모드는 `Full (strict)`를 사용한다.
-- EC2 Nginx에도 Cloudflare Origin Certificate 또는 공인 인증서를 설치한다.
-- Cloudflare IP만 origin의 80/443에 접근하도록 제한하면 더 안전하다.
-
-### 방식 B: EC2 Nginx에 Let's Encrypt 인증서 설치
-
-- 도메인 DNS가 Elastic IP를 가리키는지 확인한다.
-- Nginx 컨테이너에 `/etc/letsencrypt`를 읽기 전용 mount한다.
-- 443 listener, 인증서 경로, HTTP→HTTPS redirect를 `nginx.conf`에 추가한다.
-- Certbot 갱신 뒤 Nginx reload 절차를 예약한다.
-
-현재 Nginx는 컨테이너 안에 있으므로 호스트의 `certbot --nginx` 명령만 실행해서는 설정이 자동 완성되지 않는다. 인증서 volume과 Nginx 설정 변경을 함께 커밋·검증해야 한다.
+- `crusthack.com` DNS 레코드가 Proxied 상태인가?
+- SSL/TLS encryption mode가 `Full (strict)`인가?
+- DNS A 레코드를 새 Elastic IP로 바꾼 뒤 526 오류 없이 연결되는가?
+- EC2 Security Group의 80/443 소스를 Cloudflare 공식 IP 대역으로 제한했는가?
 
 HTTPS 확인이 끝난 뒤 보안 그룹의 80/443을 공개하고 다음을 점검한다.
 
 ```bash
-curl --head https://YOUR_DOMAIN/
-curl --fail https://YOUR_DOMAIN/api/health
+curl --head https://crusthack.com/
+curl --fail https://crusthack.com/api/health
 ```
 
 - HTTP 요청이 HTTPS로 이동하는가?
@@ -569,10 +559,10 @@ deploy/scripts/backup-runtime.sh
 git fetch origin
 git status --short --branch
 git pull --ff-only origin main
-deploy/scripts/production-preflight.sh
-docker compose -f compose.production.yaml up -d --build
+deploy/scripts/production-preflight.sh --cloudflare
+docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d --build
 docker compose -f compose.production.yaml ps
-curl --fail http://127.0.0.1/api/health
+curl --insecure --fail --resolve crusthack.com:443:127.0.0.1 https://crusthack.com/api/health
 docker compose -f compose.production.yaml logs --tail 100
 ```
 
@@ -614,8 +604,8 @@ docker compose -f compose.production.yaml logs --tail 200 backend
 # 안전한 재시작
 docker compose -f compose.production.yaml restart
 
-# 이미지 재빌드와 반영
-docker compose -f compose.production.yaml up -d --build
+# Cloudflare 운영 이미지 재빌드와 반영
+docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d --build
 
 # 컨테이너 종료, 데이터 volume 보존
 docker compose -f compose.production.yaml down
@@ -694,3 +684,7 @@ journalctl -k --grep='Out of memory' --grep='Killed process'
 - [EC2 시작 설정 항목](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-launch-parameters.html)
 - [Amazon EBS 암호화](https://docs.aws.amazon.com/ebs/latest/userguide/ebs-encryption.html)
 - [Certbot 공식 안내](https://certbot.eff.org/instructions)
+- [Cloudflare Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/)
+- [Cloudflare Origin CA](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/)
+- [Cloudflare 공식 IP 대역](https://www.cloudflare.com/ips/)
+- [ASP.NET Core 프록시와 Forwarded Headers](https://learn.microsoft.com/aspnet/core/host-and-deploy/proxy-load-balancer?view=aspnetcore-10.0)

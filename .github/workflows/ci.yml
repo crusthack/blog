@@ -48,3 +48,42 @@ jobs:
       - run: npm run build:frontend
         env:
           API_SERVER_URL: http://backend:8080
+
+  deployment:
+    name: Deployment configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create ephemeral validation secrets
+        shell: bash
+        run: |
+          chmod +x deploy/scripts/*.sh
+          deploy/scripts/create-setup-secret.sh
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 2 -nodes \
+            -keyout secrets/cloudflare-origin.key \
+            -out secrets/cloudflare-origin.pem \
+            -subj '/CN=crusthack.com' \
+            -addext 'subjectAltName=DNS:crusthack.com'
+      - name: Validate scripts and Compose variants
+        shell: bash
+        run: |
+          for script in deploy/scripts/*.sh; do sh -n "$script"; done
+          deploy/scripts/production-preflight.sh
+          deploy/scripts/production-preflight.sh --bootstrap
+          deploy/scripts/production-preflight.sh --cloudflare
+          deploy/scripts/production-preflight.sh --cloudflare --bootstrap
+      - name: Validate Nginx configurations
+        shell: bash
+        run: |
+          docker run --rm \
+            --add-host frontend:127.0.0.1 \
+            --add-host backend:127.0.0.1 \
+            --volume "$PWD/deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro" \
+            nginx:1.30.4-alpine nginx -t
+          docker run --rm \
+            --add-host frontend:127.0.0.1 \
+            --add-host backend:127.0.0.1 \
+            --volume "$PWD/deploy/nginx/nginx.cloudflare.conf:/etc/nginx/nginx.conf:ro" \
+            --volume "$PWD/secrets/cloudflare-origin.pem:/run/secrets/cloudflare_origin_certificate:ro" \
+            --volume "$PWD/secrets/cloudflare-origin.key:/run/secrets/cloudflare_origin_private_key:ro" \
+            nginx:1.30.4-alpine nginx -t

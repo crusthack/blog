@@ -19,10 +19,16 @@ apps/
   frontend/  Next.js
   backend/   ASP.NET Core Web API
 deploy/
-  nginx/     운영 reverse proxy 설정
+  nginx/     로컬 HTTP와 Cloudflare Origin HTTPS reverse proxy 설정
   scripts/   Setup Secret 생성, 운영 사전 점검과 runtime 백업
 tests/       Backend 통합 테스트
 ```
+
+루트의 Compose 파일은 역할별로 분리됩니다.
+
+- `compose.production.yaml`: 항상 사용하는 기본 운영 구성
+- `compose.bootstrap.yaml`: 최초 Owner 생성 전까지만 추가
+- `compose.cloudflare.yaml`: `crusthack.com` Cloudflare Origin HTTPS에서 추가
 
 ## 실행 환경 구분
 
@@ -78,25 +84,18 @@ npm run dev:frontend
 ```bash
 chmod +x deploy/scripts/*.sh
 deploy/scripts/create-setup-secret.sh
-deploy/scripts/production-preflight.sh
+deploy/scripts/production-preflight.sh --bootstrap
 ```
 
-Setup Code는 Docker Secret으로 Backend 컨테이너의 `/run/secrets/owner_bootstrap_token`에 읽기 전용 주입됩니다. 원본 파일은 Git과 Docker 이미지 빌드 컨텍스트에서 제외됩니다.
+Setup Code는 `compose.bootstrap.yaml`을 함께 사용할 때만 Docker Secret으로 Backend 컨테이너의 `/run/secrets/owner_bootstrap_token`에 읽기 전용 주입됩니다. 원본 파일은 Git과 Docker 이미지 빌드 컨텍스트에서 제외됩니다.
 
-이미지를 빌드하고 실행합니다.
+최초 Owner 생성 전에는 Bootstrap override를 함께 사용합니다.
 
 ```bash
-npm run deploy:build
-npm run deploy:up
+docker compose -f compose.production.yaml -f compose.bootstrap.yaml up -d --build
 ```
 
-한 명령으로 실행할 수도 있습니다.
-
-```bash
-docker compose -f compose.production.yaml up -d --build
-```
-
-배포 후 `http://서버주소/setup`에서 Owner를 생성합니다. 외부에는 Nginx의 80번 포트만 공개되고 Frontend와 Backend 포트는 Docker 네트워크 내부에만 노출됩니다.
+로컬 검증에서는 `http://localhost/setup`에서 Owner를 생성합니다. 외부에는 Nginx만 공개되고 Frontend와 Backend 포트는 Docker 네트워크 내부에만 노출됩니다.
 
 운영 설정은 Compose 환경 변수와 Secret으로만 전달됩니다. `DevelopmentOwner` 설정을 운영 환경 변수나 운영 설정 파일에 추가하면 안전을 위해 Backend 기동이 실패합니다.
 
@@ -107,9 +106,26 @@ BLOG_ConnectionStrings__BlogDatabase=Data Source=/app/runtime/blog.db
 BLOG_BOOTSTRAP__TOKENFILE=/run/secrets/owner_bootstrap_token
 ```
 
-초기화가 끝난 뒤 Secret 연결을 완전히 제거하려면 `compose.production.yaml`에서 Backend의 `secrets`와 `BLOG_BOOTSTRAP__TOKENFILE` 항목을 제거하고 컨테이너를 재생성합니다. 데이터베이스의 초기화 완료 상태는 유지됩니다.
+초기화가 끝나면 기본 Compose만으로 컨테이너를 재생성하고 Setup Code 파일을 삭제합니다. 추적 파일을 서버에서 직접 수정할 필요가 없으며 데이터베이스의 초기화 완료 상태는 유지됩니다.
 
-현재 Nginx 설정은 HTTP 기준입니다. 실제 도메인 배포 시에는 Nginx에 인증서를 두거나 Cloudflare 또는 로드 밸런서에서 TLS를 종료하도록 확장해야 합니다.
+```bash
+docker compose -f compose.production.yaml up -d --force-recreate backend
+shred -u secrets/owner-bootstrap-token
+```
+
+`crusthack.com` 운영 배포에서는 Cloudflare Origin CA 인증서와 `compose.cloudflare.yaml`을 함께 사용합니다. Cloudflare SSL/TLS 모드는 `Full (strict)`이어야 하며 Nginx는 HTTP를 HTTPS로 이동시키고 Cloudflare의 실제 방문자 IP를 Backend로 전달합니다.
+
+```bash
+deploy/scripts/production-preflight.sh --cloudflare --bootstrap
+docker compose -f compose.production.yaml -f compose.cloudflare.yaml -f compose.bootstrap.yaml up -d --build
+```
+
+Owner 생성 후 운영 명령에서는 Bootstrap override만 제외합니다.
+
+```bash
+deploy/scripts/production-preflight.sh --cloudflare
+docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d
+```
 
 첫 배포의 전체 순서와 수동 확인 항목은 [deploy/FIRST_DEPLOY.md](deploy/FIRST_DEPLOY.md)에 정리되어 있습니다.
 

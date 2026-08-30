@@ -1,0 +1,10 @@
+services:
+  backend:
+    environment:
+      BLOG_BOOTSTRAP__TOKENFILE: /run/secrets/owner_bootstrap_token
+    secrets:
+      - owner_bootstrap_token
+
+secrets:
+  owner_bootstrap_token:
+    file: ./secrets/owner-bootstrap-token

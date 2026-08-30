@@ -48,7 +48,7 @@ trap cleanup EXIT INT TERM
 MSYS_NO_PATHCONV=$disable_path_conversion docker run --rm \
     --volumes-from "$backend_container":ro \
     --volume "$docker_backup_directory:/backup" \
-    alpine:3.22 \
+    alpine:3.24 \
     tar -czf "/backup/$archive_name" -C /app/runtime .
 
 if command -v sha256sum >/dev/null 2>&1; then

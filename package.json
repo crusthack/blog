@@ -14,6 +14,9 @@
     "test:backend": "dotnet test Blog.slnx",
     "deploy:build": "docker compose -f compose.production.yaml build",
     "deploy:up": "docker compose -f compose.production.yaml up -d",
+    "deploy:up:bootstrap": "docker compose -f compose.production.yaml -f compose.bootstrap.yaml up -d",
+    "deploy:up:cloudflare": "docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d",
+    "deploy:up:cloudflare:bootstrap": "docker compose -f compose.production.yaml -f compose.cloudflare.yaml -f compose.bootstrap.yaml up -d",
     "deploy:down": "docker compose -f compose.production.yaml down"
   }
 }

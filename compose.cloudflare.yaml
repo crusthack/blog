@@ -1,0 +1,15 @@
+services:
+  nginx:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./deploy/nginx/nginx.cloudflare.conf:/etc/nginx/nginx.conf:ro
+    secrets:
+      - cloudflare_origin_certificate
+      - cloudflare_origin_private_key
+
+secrets:
+  cloudflare_origin_certificate:
+    file: ./secrets/cloudflare-origin.pem
+  cloudflare_origin_private_key:
+    file: ./secrets/cloudflare-origin.key
