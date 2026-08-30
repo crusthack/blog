@@ -63,8 +63,6 @@ public sealed class OwnerSetupService(
         {
             Id = Guid.NewGuid(),
             UserName = request.Username.Trim(),
-            Email = request.Email.Trim(),
-            EmailConfirmed = false,
         };
 
         var createResult = await userManager.CreateAsync(owner, request.Password);
@@ -85,13 +83,13 @@ public sealed class OwnerSetupService(
         await db.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return CreateOwnerResult.Created(new OwnerResponse(owner.Id, owner.UserName!, owner.Email!));
+        return CreateOwnerResult.Created(new OwnerResponse(owner.Id, owner.UserName!));
     }
 }
 
 public sealed record SetupStatusResponse(bool RequiresSetup, bool SetupCodeConfigured);
 
-public sealed record OwnerResponse(Guid Id, string Username, string Email);
+public sealed record OwnerResponse(Guid Id, string Username);
 
 public enum CreateOwnerStatus
 {

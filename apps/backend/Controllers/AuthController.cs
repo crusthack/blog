@@ -62,7 +62,6 @@ public sealed class AuthController(
         return new CurrentUserResponse(
             user.Id,
             user.UserName!,
-            user.Email!,
             roles.Contains(Auth.Roles.Owner),
             user.CreatedAtUtc);
     }
@@ -80,6 +79,5 @@ public sealed class LoginRequest
 public sealed record CurrentUserResponse(
     Guid Id,
     string Username,
-    string Email,
     bool IsOwner,
     DateTimeOffset CreatedAtUtc);

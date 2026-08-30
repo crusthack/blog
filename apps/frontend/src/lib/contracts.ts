@@ -1,7 +1,6 @@
 export type CurrentUser = {
   id: string;
   username: string;
-  email: string;
   isOwner: boolean;
   createdAtUtc: string;
 };
@@ -14,7 +13,6 @@ export type SetupStatus = {
 export type Owner = {
   id: string;
   username: string;
-  email: string;
 };
 
 export type PostSummary = {

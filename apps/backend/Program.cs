@@ -58,7 +58,7 @@ builder.Services
         options.Password.RequireLowercase = false;
         options.Password.RequireNonAlphanumeric = false;
         options.Password.RequireUppercase = false;
-        options.User.RequireUniqueEmail = true;
+        options.User.RequireUniqueEmail = false;
         options.Lockout.MaxFailedAccessAttempts = 5;
         options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
     })

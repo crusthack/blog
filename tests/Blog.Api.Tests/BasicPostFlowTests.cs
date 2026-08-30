@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Blog.Api.Controllers;
 using Blog.Api.Setup;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -25,7 +26,6 @@ public sealed class BasicPostFlowTests
             {
                 SetupCode = SetupApiFactory.SetupCode,
                 Username = "owner",
-                Email = "owner@example.com",
                 Password = "correct horse battery staple",
             });
         Assert.Equal(HttpStatusCode.Created, setupResponse.StatusCode);
@@ -39,6 +39,9 @@ public sealed class BasicPostFlowTests
             });
         Assert.Equal(HttpStatusCode.OK, loginResponse.StatusCode);
         Assert.NotEmpty(loginResponse.Headers.GetValues("Set-Cookie"));
+        var currentUser = await loginResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("owner", currentUser.GetProperty("username").GetString());
+        Assert.False(currentUser.TryGetProperty("email", out _));
 
         var draftResponse = await ownerClient.PostAsJsonAsync(
             "/api/posts",

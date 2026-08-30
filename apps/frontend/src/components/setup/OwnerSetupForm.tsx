@@ -53,7 +53,6 @@ export function OwnerSetupForm() {
         body: JSON.stringify({
           setupCode: String(form.get("setupCode") ?? ""),
           username: String(form.get("username") ?? ""),
-          email: String(form.get("email") ?? ""),
           password,
         }),
       });
@@ -126,11 +125,6 @@ export function OwnerSetupForm() {
           required
         />
         <p className="hint">영문, 숫자, 점, 밑줄과 하이픈을 사용할 수 있습니다.</p>
-      </div>
-
-      <div className="field">
-        <label htmlFor="email">이메일</label>
-        <input id="email" name="email" type="email" autoComplete="email" maxLength={254} required />
       </div>
 
       <div className="field">

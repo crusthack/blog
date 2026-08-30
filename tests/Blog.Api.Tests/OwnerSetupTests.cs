@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Blog.Api.Auth;
 using Blog.Api.Models;
 using Blog.Api.Setup;
@@ -37,9 +38,9 @@ public sealed class OwnerSetupTests
             CreateRequest(SetupApiFactory.SetupCode));
         Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
 
-        var owner = await createdResponse.Content.ReadFromJsonAsync<OwnerResponse>();
-        Assert.NotNull(owner);
-        Assert.Equal("owner", owner.Username);
+        var owner = await createdResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("owner", owner.GetProperty("username").GetString());
+        Assert.False(owner.TryGetProperty("email", out _));
 
         var repeatedResponse = await client.PostAsJsonAsync(
             "/api/setup/owner",
@@ -67,10 +68,10 @@ public sealed class OwnerSetupTests
         var responses = await Task.WhenAll(
             firstClient.PostAsJsonAsync(
                 "/api/setup/owner",
-                CreateRequest(SetupApiFactory.SetupCode, "owner-one", "owner-one@example.com")),
+                CreateRequest(SetupApiFactory.SetupCode, "owner-one")),
             secondClient.PostAsJsonAsync(
                 "/api/setup/owner",
-                CreateRequest(SetupApiFactory.SetupCode, "owner-two", "owner-two@example.com")));
+                CreateRequest(SetupApiFactory.SetupCode, "owner-two")));
 
         Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Created);
         Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
@@ -79,17 +80,16 @@ public sealed class OwnerSetupTests
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var owners = await userManager.GetUsersInRoleAsync(Roles.Owner);
         Assert.Single(owners);
+        Assert.Null(owners[0].Email);
     }
 
     private static CreateOwnerRequest CreateRequest(
         string setupCode,
-        string username = "owner",
-        string email = "owner@example.com") =>
+        string username = "owner") =>
         new()
         {
             SetupCode = setupCode,
             Username = username,
-            Email = email,
             Password = "passw0rd",
         };
 }
