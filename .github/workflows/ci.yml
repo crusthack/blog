@@ -67,7 +67,7 @@ jobs:
       - name: Validate scripts and Compose variants
         shell: bash
         run: |
-          for script in deploy/scripts/*.sh; do sh -n "$script"; done
+          for script in deploy/scripts/*.sh; do bash -n "$script"; done
           deploy/scripts/production-preflight.sh
           deploy/scripts/production-preflight.sh --bootstrap
           deploy/scripts/production-preflight.sh --cloudflare
