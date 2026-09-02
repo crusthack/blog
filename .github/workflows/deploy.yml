@@ -79,7 +79,14 @@ jobs:
 
       - name: Package tracked release files
         shell: bash
-        run: git archive --format=tar.gz --output="blog-${DEPLOY_SHA}.tar.gz" "$DEPLOY_SHA"
+        run: |
+          set -euo pipefail
+          archive="blog-${DEPLOY_SHA}.tar.gz"
+          git archive --format=tar.gz --output="$archive" "$DEPLOY_SHA"
+          if tar -tzf "$archive" | grep -Eq '(^|/)secrets(/|$)'; then
+            echo "Release archive must not contain the secrets directory." >&2
+            exit 1
+          fi
 
       - name: Configure pinned SSH host identity
         shell: bash
