@@ -1,0 +1,120 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL || 'https://crusthack.com' }}
+    env:
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_SSH_PORT: ${{ vars.EC2_SSH_PORT || '22' }}
+    steps:
+      - name: Checkout validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+          persist-credentials: false
+
+      - name: Setup .NET for manual deployment validation
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Setup Node.js for manual deployment validation
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate manually dispatched commit
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          API_SERVER_URL: http://backend:8080
+        run: |
+          set -euo pipefail
+          dotnet restore Blog.slnx
+          dotnet format Blog.slnx --verify-no-changes --no-restore
+          dotnet test Blog.slnx --configuration Release --no-restore
+          npm ci
+          npm run lint:frontend
+          npm run build:frontend
+
+      - name: Validate deployment inputs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test -n "$EC2_HOST"
+          [[ "$EC2_SSH_PORT" =~ ^[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$DEPLOY_SHA"
+          main_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)
+          test "$main_sha" = "$DEPLOY_SHA" || {
+            echo "Refusing to deploy a commit that is no longer the head of main." >&2
+            exit 1
+          }
+
+      - name: Package tracked release files
+        shell: bash
+        run: git archive --format=tar.gz --output="blog-${DEPLOY_SHA}.tar.gz" "$DEPLOY_SHA"
+
+      - name: Configure pinned SSH host identity
+        shell: bash
+        env:
+          EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          EC2_SSH_KNOWN_HOSTS: ${{ secrets.EC2_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$EC2_SSH_PRIVATE_KEY"
+          test -n "$EC2_SSH_KNOWN_HOSTS"
+          install -m 0700 -d "$HOME/.ssh"
+          printf '%s\n' "$EC2_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 0600 "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$EC2_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/blog-deploy-key"
+          chmod 0600 "$RUNNER_TEMP/blog-deploy-key"
+
+      - name: Upload release archive
+        shell: bash
+        run: >-
+          scp -i "$RUNNER_TEMP/blog-deploy-key"
+          -P "$EC2_SSH_PORT"
+          -o BatchMode=yes
+          "blog-${DEPLOY_SHA}.tar.gz"
+          "ubuntu@${EC2_HOST}:/var/tmp/"
+
+      - name: Activate release and verify health
+        shell: bash
+        run: >-
+          ssh -i "$RUNNER_TEMP/blog-deploy-key"
+          -p "$EC2_SSH_PORT"
+          -o BatchMode=yes
+          "ubuntu@${EC2_HOST}"
+          "sudo -n -- /usr/local/sbin/deploy-blog '${DEPLOY_SHA}'"
+
+      - name: Remove ephemeral SSH key
+        if: always()
+        shell: bash
+        run: rm -f -- "$RUNNER_TEMP/blog-deploy-key"
