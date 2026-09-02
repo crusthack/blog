@@ -10,7 +10,9 @@ export function SiteHeader() {
     <header className="site-header">
       <Link className="brand" href="/">Crusthack</Link>
       <nav className="site-nav" aria-label="주요 메뉴">
+        <Link href="/about">소개</Link>
         {user?.isOwner ? <Link href="/write">새 글</Link> : null}
+        {user?.isOwner ? <Link href="/categories/manage">카테고리</Link> : null}
         {!isLoading && !user ? <Link href="/login">Owner 로그인</Link> : null}
         {user ? (
           <button className="text-button" type="button" onClick={() => void logout()}>

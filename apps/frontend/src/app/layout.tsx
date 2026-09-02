@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
 import { SetupGuard } from "@/components/setup/SetupGuard";
 import "./globals.css";
 
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <AuthProvider>
             <SiteHeader />
             {children}
+            <SiteFooter />
           </AuthProvider>
         </SetupGuard>
       </body>

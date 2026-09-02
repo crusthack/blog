@@ -85,6 +85,46 @@ namespace Blog.Api.Data.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Blog.Api.Models.Category", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsVisible")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("Categories");
+                });
+
             modelBuilder.Entity("Blog.Api.Models.Post", b =>
                 {
                     b.Property<Guid>("Id")
@@ -93,6 +133,9 @@ namespace Blog.Api.Data.Migrations
 
                     b.Property<string>("Content")
                         .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("CategoryId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAtUtc")
@@ -125,6 +168,8 @@ namespace Blog.Api.Data.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CategoryId");
 
                     b.HasIndex("OwnerId");
 
@@ -294,13 +339,25 @@ namespace Blog.Api.Data.Migrations
 
             modelBuilder.Entity("Blog.Api.Models.Post", b =>
                 {
+                    b.HasOne("Blog.Api.Models.Category", "Category")
+                        .WithMany("Posts")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Blog.Api.Models.ApplicationUser", "Owner")
                         .WithMany()
                         .HasForeignKey("OwnerId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("Category");
+
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("Blog.Api.Models.Category", b =>
+                {
+                    b.Navigation("Posts");
                 });
 
             modelBuilder.Entity("Blog.Api.Models.SiteInstallation", b =>

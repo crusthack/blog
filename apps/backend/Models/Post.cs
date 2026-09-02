@@ -8,6 +8,8 @@ public sealed class Post
     public string? Description { get; set; }
     public string Content { get; set; } = string.Empty;
     public string Status { get; set; } = PostStatuses.Draft;
+    public Guid? CategoryId { get; set; }
+    public Category? Category { get; set; }
     public Guid OwnerId { get; set; }
     public ApplicationUser Owner { get; set; } = null!;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;

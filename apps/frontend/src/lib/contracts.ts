@@ -15,10 +15,22 @@ export type Owner = {
   username: string;
 };
 
+export type Category = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  sortOrder: number;
+  isVisible: boolean;
+  postCount: number;
+};
+
 export type PostSummary = {
   postNumber: number;
   title: string;
   description: string | null;
+  categoryId: string | null;
+  categoryName: string | null;
   status: "Draft" | "Published";
   updatedAtUtc: string;
   publishedAtUtc: string | null;

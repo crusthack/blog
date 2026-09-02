@@ -15,19 +15,34 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
 {
     [AllowAnonymous]
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyList<PostSummaryResponse>>> GetPosts()
+    public async Task<ActionResult<IReadOnlyList<PostSummaryResponse>>> GetPosts(
+        [FromQuery] Guid? categoryId,
+        [FromQuery, StringLength(120)] string? query)
     {
         var canManage = User.IsInRole(Roles.Owner);
-        var query = db.Posts.AsNoTracking();
+        var postsQuery = db.Posts.AsNoTracking();
         if (!canManage)
-            query = query.Where(post => post.Status == PostStatuses.Published);
+            postsQuery = postsQuery.Where(post =>
+                post.Status == PostStatuses.Published &&
+                (post.Category == null || post.Category.IsVisible));
 
-        var posts = await query
+        if (categoryId.HasValue)
+            postsQuery = postsQuery.Where(post => post.CategoryId == categoryId);
+
+        var search = Normalize(query);
+        if (search is not null)
+            postsQuery = postsQuery.Where(post =>
+                EF.Functions.Like(post.Title, $"%{search}%") ||
+                post.Description != null && EF.Functions.Like(post.Description, $"%{search}%"));
+
+        var posts = await postsQuery
             .OrderByDescending(post => post.UpdatedAtUtc)
             .Select(post => new PostSummaryResponse(
                 post.PostNumber,
                 post.Title,
                 post.Description,
+                post.CategoryId,
+                post.Category == null ? null : post.Category.Name,
                 post.Status,
                 post.UpdatedAtUtc,
                 post.PublishedAtUtc))
@@ -41,6 +56,7 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
     public async Task<ActionResult<PostDetailResponse>> GetPost(long postNumber)
     {
         var post = await db.Posts.AsNoTracking()
+            .Include(candidate => candidate.Category)
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
 
         if (post is null ||
@@ -56,6 +72,14 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
     {
         if (!TryGetUserId(out var ownerId)) return Unauthorized();
 
+        Category? category = null;
+        if (request.CategoryId.HasValue)
+        {
+            category = await db.Categories.SingleOrDefaultAsync(item => item.Id == request.CategoryId);
+            if (category is null)
+                return BadRequest(new ProblemDetails { Title = "존재하지 않는 카테고리입니다." });
+        }
+
         var postNumber = (await db.Posts.MaxAsync(post => (long?)post.PostNumber) ?? 0) + 1;
         var now = DateTime.UtcNow;
         var post = new Post
@@ -65,6 +89,8 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
             Description = Normalize(request.Description),
             Content = request.Content,
             Status = request.Publish ? PostStatuses.Published : PostStatuses.Draft,
+            CategoryId = request.CategoryId,
+            Category = category,
             OwnerId = ownerId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
@@ -82,12 +108,22 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
         long postNumber,
         UpdatePostRequest request)
     {
-        var post = await db.Posts.SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
+        var post = await db.Posts.Include(candidate => candidate.Category)
+            .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
         if (post is null) return NotFound();
 
         post.Title = request.Title.Trim();
         post.Description = Normalize(request.Description);
         post.Content = request.Content;
+        Category? category = null;
+        if (request.CategoryId.HasValue)
+        {
+            category = await db.Categories.SingleOrDefaultAsync(item => item.Id == request.CategoryId);
+            if (category is null)
+                return BadRequest(new ProblemDetails { Title = "존재하지 않는 카테고리입니다." });
+        }
+        post.CategoryId = request.CategoryId;
+        post.Category = category;
         post.Status = request.Publish ? PostStatuses.Published : PostStatuses.Draft;
         post.UpdatedAtUtc = DateTime.UtcNow;
         post.PublishedAtUtc = request.Publish
@@ -120,6 +156,8 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
         post.PostNumber,
         post.Title,
         post.Description,
+        post.CategoryId,
+        post.Category?.Name,
         post.Content,
         post.Status,
         post.CreatedAtUtc,
@@ -131,6 +169,8 @@ public sealed record PostSummaryResponse(
     long PostNumber,
     string Title,
     string? Description,
+    Guid? CategoryId,
+    string? CategoryName,
     string Status,
     DateTime UpdatedAtUtc,
     DateTime? PublishedAtUtc);
@@ -139,6 +179,8 @@ public sealed record PostDetailResponse(
     long PostNumber,
     string Title,
     string? Description,
+    Guid? CategoryId,
+    string? CategoryName,
     string Content,
     string Status,
     DateTime CreatedAtUtc,
@@ -155,6 +197,8 @@ public class CreatePostRequest
 
     [Required, StringLength(1_000_000, MinimumLength = 1)]
     public required string Content { get; init; }
+
+    public Guid? CategoryId { get; init; }
 
     public bool Publish { get; init; }
 }

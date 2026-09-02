@@ -13,6 +13,370 @@
   --success: #176b4d;
 }
 
+/* Editorial archive theme, evolved from the original MDX blog. */
+:root {
+  --ink: #142019;
+  --paper: #f6f2e8;
+  --signal: #d85b36;
+}
+
+body {
+  font-family: Inter, Pretendard, "Noto Sans KR", system-ui, sans-serif;
+}
+
+.site-header {
+  min-height: 4.5rem;
+  padding-inline: max(1.25rem, calc((100vw - 76rem) / 2));
+}
+
+.brand {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.35rem;
+}
+
+.home-hero {
+  max-width: 64rem;
+}
+
+.home-hero h1,
+.post-detail > h1,
+.about-page > h1,
+.manage-header > h1 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+}
+
+.home-hero h1 {
+  max-width: 60rem;
+  line-height: 0.98;
+}
+
+.home-hero h1 em {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.hero-rule,
+.article-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2.5rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.hero-rule::after,
+.article-divider::after {
+  height: 1px;
+  flex: 1;
+  background: var(--border);
+  content: "";
+}
+
+.archive-layout {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 5rem);
+}
+
+.category-rail {
+  position: sticky;
+  top: 6.5rem;
+  display: flex;
+  height: fit-content;
+  flex-direction: column;
+  border-top: 2px solid var(--ink);
+}
+
+.rail-title {
+  margin: 0;
+  padding: 0.8rem 0;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.category-rail a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--border);
+  padding: 0.75rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.category-rail a.active,
+.category-rail a:hover {
+  color: var(--accent);
+}
+
+.category-rail small {
+  font-variant-numeric: tabular-nums;
+}
+
+.archive-content {
+  min-width: 0;
+}
+
+.category-intro {
+  margin-bottom: 2rem;
+}
+
+.category-intro h2 {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(2rem, 5vw, 3.5rem);
+  font-weight: 500;
+}
+
+.category-intro > p:last-child {
+  color: var(--muted);
+}
+
+.search-form {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.search-form input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  background: transparent;
+  padding: 0.75rem 0;
+  outline: none;
+}
+
+.search-form button,
+.editor-toolbar button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  padding: 0.5rem 0.85rem;
+  color: var(--foreground);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.search-form button:hover,
+.editor-toolbar button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-form .search-reset {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.post-card {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+  gap: 1rem;
+  padding-block: 1.75rem;
+}
+
+.post-card h2 {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+}
+
+.post-index {
+  padding-top: 0.25rem;
+  color: var(--muted);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.8rem;
+}
+
+.post-card-body {
+  min-width: 0;
+}
+
+.post-arrow {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+
+.post-card:hover .post-arrow {
+  transform: translate(0.2rem, -0.2rem);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.article-divider {
+  margin: 2rem 0 3rem;
+}
+
+.field select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: #fff;
+  padding: 0.8rem 0.9rem;
+  color: var(--foreground);
+  outline: none;
+}
+
+.category-kicker {
+  width: fit-content;
+  margin: 0;
+  border-radius: 999px;
+  background: #e4eee7;
+  padding: 0.35rem 0.65rem;
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.editor-toolbar button {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.site-footer {
+  display: flex;
+  max-width: 76rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 2rem auto 0;
+  border-top: 1px solid var(--border);
+  padding: 2rem 1rem 3rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.site-footer p {
+  margin: 0;
+}
+
+.about-page {
+  max-width: 62rem;
+  margin: 0 auto;
+}
+
+.about-page > h1 {
+  max-width: 50rem;
+  font-size: clamp(3rem, 8vw, 6rem);
+}
+
+.about-page > .lead {
+  max-width: 45rem;
+  margin-top: 2rem;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 5rem;
+  border-top: 1px solid var(--ink);
+}
+
+.about-grid section {
+  border-right: 1px solid var(--border);
+  padding: 1.5rem;
+}
+
+.about-grid section:first-child { padding-left: 0; }
+.about-grid section:last-child { border-right: 0; }
+.about-grid span { color: var(--signal); font-size: 0.75rem; font-weight: 800; }
+.about-grid h2 { font-family: Georgia, "Times New Roman", serif; }
+.about-grid p { color: var(--muted); line-height: 1.65; }
+
+.manage-header {
+  max-width: 42rem;
+  margin-bottom: 2.5rem;
+}
+
+.manage-grid {
+  display: grid;
+  grid-template-columns: minmax(18rem, 0.8fr) minmax(0, 1.2fr);
+  gap: 2rem;
+  align-items: start;
+}
+
+.category-admin-list {
+  border-top: 2px solid var(--ink);
+}
+
+.category-admin-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 0;
+}
+
+.category-admin-list p { margin: 0 0 0.25rem; }
+.category-admin-list p span { margin-left: 0.5rem; color: var(--muted); font-size: 0.75rem; }
+.category-admin-list small { color: var(--muted); }
+
+.danger-button {
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.danger-button:disabled { color: var(--muted); cursor: not-allowed; opacity: 0.5; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.category-page {
+  padding-top: clamp(3rem, 7vw, 6rem);
+}
+
+@media (max-width: 800px) {
+  .site-nav { gap: 0.65rem; font-size: 0.78rem; }
+  .archive-layout { grid-template-columns: 1fr; gap: 1.5rem; }
+  .category-rail { position: static; flex-direction: row; overflow-x: auto; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+  .category-rail .rail-title { display: none; }
+  .category-rail a { flex: 0 0 auto; gap: 0.45rem; border: 0; padding: 0.8rem; }
+  .post-card { grid-template-columns: 1.75rem minmax(0, 1fr); }
+  .post-arrow { display: none; }
+  .manage-grid, .about-grid { grid-template-columns: 1fr; }
+  .about-grid section { border-right: 0; border-bottom: 1px solid var(--border); padding-inline: 0; }
+  .site-footer { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 520px) {
+  .site-header { align-items: flex-start; flex-direction: column; padding-block: 0.8rem; }
+  .site-nav { width: 100%; overflow-x: auto; padding-bottom: 0.2rem; }
+  .home-hero h1 { font-size: clamp(2.6rem, 14vw, 4rem); }
+  .search-form { flex-wrap: wrap; }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -467,4 +831,18 @@ h1 {
     align-items: stretch;
     flex-direction: column;
   }
+}
+
+/* Keep the theme overrides after the base component rules. */
+body { font-family: Inter, Pretendard, "Noto Sans KR", system-ui, sans-serif; }
+.site-header { min-height: 4.5rem; padding-inline: max(1.25rem, calc((100vw - 76rem) / 2)); }
+.brand { font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; }
+.home-hero { max-width: 64rem; }
+.home-hero h1 { max-width: 60rem; font-family: Georgia, "Times New Roman", serif; font-weight: 500; line-height: 0.98; }
+.post-card { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem; gap: 1rem; padding-block: 1.75rem; }
+.post-card h2 { font-family: Georgia, "Times New Roman", serif; font-weight: 600; }
+
+@media (max-width: 800px) {
+  .site-header { padding-inline: 1rem; }
+  .post-card { grid-template-columns: 1.75rem minmax(0, 1fr); }
 }

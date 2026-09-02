@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
-import { type PostDetail, readProblem } from "@/lib/contracts";
+import { type Category, type PostDetail, readProblem } from "@/lib/contracts";
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
 
@@ -14,10 +14,13 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState(initialContent);
+  const [categoryId, setCategoryId] = useState("");
+  const [categories, setCategories] = useState<Category[]>([]);
   const [publish, setPublish] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(postNumber));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
+  const editorRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -41,6 +44,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         setTitle(post.title);
         setDescription(post.description ?? "");
         setContent(post.content);
+        setCategoryId(post.categoryId ?? "");
         setPublish(post.status === "Published");
       })
       .catch((reason: unknown) => {
@@ -54,6 +58,22 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
     return () => controller.abort();
   }, [isAuthLoading, postNumber, router, user]);
 
+  useEffect(() => {
+    if (!user?.isOwner) return;
+    const controller = new AbortController();
+    void fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readProblem(response, "카테고리를 불러오지 못했습니다."));
+        return (await response.json()) as Category[];
+      })
+      .then(setCategories)
+      .catch((reason: unknown) => {
+        if (!(reason instanceof DOMException && reason.name === "AbortError"))
+          setError(reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.");
+      });
+    return () => controller.abort();
+  }, [user]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsSaving(true);
@@ -63,7 +83,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         method: postNumber ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, content, publish }),
+        body: JSON.stringify({ title, description, content, categoryId: categoryId || null, publish }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "글을 저장하지 못했습니다."));
       const saved = (await response.json()) as PostDetail;
@@ -74,6 +94,19 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function insertMarkdown(before: string, after = "", placeholder = "텍스트") {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    const selected = content.slice(start, end) || placeholder;
+    setContent(`${content.slice(0, start)}${before}${selected}${after}${content.slice(end)}`);
+    window.requestAnimationFrame(() => {
+      editor.focus();
+      editor.setSelectionRange(start + before.length, start + before.length + selected.length);
+    });
   }
 
   if (isAuthLoading || isLoading) return <main className="content-shell"><p className="muted">편집기를 준비하고 있습니다.</p></main>;
@@ -104,8 +137,23 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
             <input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} />
           </label>
           <label className="field">
+            <span>카테고리</span>
+            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+              <option value="">분류 없음</option>
+              {categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
+            </select>
+          </label>
+          <label className="field">
             <span>Markdown 본문</span>
-            <textarea className="markdown-editor" value={content} onChange={(event) => setContent(event.target.value)} required spellCheck={false} />
+            <span className="editor-toolbar" role="toolbar" aria-label="Markdown 서식">
+              <button type="button" onClick={() => insertMarkdown("## ", "", "소제목")}>H2</button>
+              <button type="button" onClick={() => insertMarkdown("**", "**")}>굵게</button>
+              <button type="button" onClick={() => insertMarkdown("[", "](https://)", "링크 이름")}>링크</button>
+              <button type="button" onClick={() => insertMarkdown("- ", "", "목록")}>목록</button>
+              <button type="button" onClick={() => insertMarkdown("```\n", "\n```", "code")}>코드</button>
+              <button type="button" onClick={() => insertMarkdown("> ", "", "인용")}>인용</button>
+            </span>
+            <textarea ref={editorRef} className="markdown-editor" value={content} onChange={(event) => setContent(event.target.value)} required spellCheck={false} />
           </label>
           <label className="publish-control">
             <input type="checkbox" checked={publish} onChange={(event) => setPublish(event.target.checked)} />
@@ -115,6 +163,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
 
         <section className="preview-panel">
           <p className="eyebrow">Preview</p>
+          {categories.find((category) => category.id === categoryId) ? <p className="category-kicker">{categories.find((category) => category.id === categoryId)?.name}</p> : null}
           <h1>{title || "제목 미리보기"}</h1>
           {description ? <p className="lead">{description}</p> : null}
           <MarkdownContent source={content} />
