@@ -2,10 +2,12 @@ using System.Threading.RateLimiting;
 using Blog.Api.Data;
 using Blog.Api.Models;
 using Blog.Api.Setup;
+using Blog.Api.Storage;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using System.Net;
 
@@ -37,6 +39,8 @@ if (builder.Environment.IsDevelopment())
 
 builder.Services.AddOptions<BootstrapOptions>()
     .Bind(builder.Configuration.GetSection(BootstrapOptions.SectionName));
+builder.Services.AddOptions<PostAssetStorageOptions>()
+    .Bind(builder.Configuration.GetSection(PostAssetStorageOptions.SectionName));
 
 var developmentOwnerSection = builder.Configuration.GetSection(DevelopmentOwnerOptions.SectionName);
 if (builder.Environment.IsDevelopment())
@@ -56,7 +60,17 @@ else if (developmentOwnerSection.Exists())
 }
 
 builder.Services.AddDbContext<BlogDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("BlogDatabase")));
+{
+    var connectionString = builder.Configuration.GetConnectionString("BlogDatabase")
+        ?? throw new InvalidOperationException("The BlogDatabase connection string is required.");
+    var sqliteConnectionString = new SqliteConnectionStringBuilder(connectionString)
+    {
+        DefaultTimeout = 5,
+        ForeignKeys = true,
+        Pooling = true,
+    }.ToString();
+    options.UseSqlite(sqliteConnectionString);
+});
 
 builder.Services
     .AddIdentityCore<ApplicationUser>(options =>
@@ -106,6 +120,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 builder.Services.AddScoped<BootstrapTokenProvider>();
 builder.Services.AddScoped<OwnerSetupService>();
+builder.Services.AddSingleton<PostAssetStorage>();
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -128,6 +143,24 @@ builder.Services.AddRateLimiter(options =>
                 Window = TimeSpan.FromMinutes(15),
                 QueueLimit = 0,
             }));
+    options.AddPolicy("public-read", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+    options.AddPolicy("image-read", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 180,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
 });
 
 var app = builder.Build();
@@ -143,14 +176,29 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapGet("/api/health", async (BlogDbContext db, CancellationToken cancellationToken) =>
-    await db.Database.CanConnectAsync(cancellationToken)
-        ? Results.Ok(new { Status = "Healthy" })
-        : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
+{
+    var databaseConnected = await db.Database.CanConnectAsync(cancellationToken);
+    var status = databaseConnected ? "Healthy" : "Unhealthy";
+    var response = new
+    {
+        Status = status,
+        Api = new { Status = "Healthy" },
+        Database = new { Provider = "SQLite", Status = status },
+        CheckedAtUtc = DateTime.UtcNow,
+    };
+
+    return databaseConnected
+        ? Results.Ok(response)
+        : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
+});
 app.MapControllers();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+    await db.Database.ExecuteSqlRawAsync("PRAGMA journal_mode = WAL;");
+    await db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = ON;");
+    await db.Database.ExecuteSqlRawAsync("PRAGMA busy_timeout = 5000;");
     await db.Database.MigrateAsync();
     if (app.Environment.IsDevelopment())
     {

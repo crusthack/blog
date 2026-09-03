@@ -45,7 +45,13 @@ function SetupCheck({ children }: { children: ReactNode }) {
   }, [router]);
 
   if (isChecking) {
-    return <div className="loading-screen">사이트 설정을 확인하고 있습니다.</div>;
+    return (
+      <main className="grid min-h-[70vh] place-items-center px-6 py-16">
+        <p data-ui="notice" role="status" className="bg-gray-50 px-5 py-4 text-sm font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+          사이트 설정을 확인하고 있습니다.
+        </p>
+      </main>
+    );
   }
 
   return children;

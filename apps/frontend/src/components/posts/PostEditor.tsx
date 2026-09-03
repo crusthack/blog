@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
+import { PostAssetManager } from "@/components/posts/PostAssetManager";
 import { type Category, type PostDetail, readProblem } from "@/lib/contracts";
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
@@ -19,6 +20,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   const [publish, setPublish] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(postNumber));
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
   const editorRef = useRef<HTMLTextAreaElement>(null);
 
@@ -109,64 +111,201 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
     });
   }
 
-  if (isAuthLoading || isLoading) return <main className="content-shell"><p className="muted">편집기를 준비하고 있습니다.</p></main>;
+  function insertAssetMarkdown(markdown: string) {
+    const editor = editorRef.current;
+    const start = editor?.selectionStart ?? content.length;
+    const end = editor?.selectionEnd ?? start;
+    const contentBefore = content.slice(0, start);
+    const contentAfter = content.slice(end);
+    const leadingBreak = contentBefore.length === 0 || contentBefore.endsWith("\n\n")
+      ? ""
+      : contentBefore.endsWith("\n") ? "\n" : "\n\n";
+    const trailingBreak = contentAfter.length === 0 || contentAfter.startsWith("\n\n")
+      ? ""
+      : contentAfter.startsWith("\n") ? "\n" : "\n\n";
+    const inserted = `${leadingBreak}${markdown}${trailingBreak}`;
+
+    setContent(`${contentBefore}${inserted}${contentAfter}`);
+    window.requestAnimationFrame(() => {
+      if (!editor) return;
+      const nextCursor = start + leadingBreak.length + markdown.length;
+      editor.focus();
+      editor.setSelectionRange(nextCursor, nextCursor);
+    });
+  }
+
+  async function deletePost() {
+    if (!postNumber || isSaving || isDeleting) return;
+    if (!window.confirm("이 글을 완전히 삭제할까요? 삭제한 글은 복구할 수 없습니다.")) return;
+
+    setIsDeleting(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/posts/${encodeURIComponent(postNumber)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
+      router.replace("/");
+      router.refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "글을 삭제하지 못했습니다.");
+      setIsDeleting(false);
+    }
+  }
+
+  if (isAuthLoading || isLoading) {
+    return <main className="mx-auto max-w-7xl p-10 text-gray-500 dark:text-gray-400">편집기를 준비하고 있습니다.</main>;
+  }
   if (!user?.isOwner) return null;
 
   return (
-    <main className="editor-shell">
-      <header className="editor-header">
+    <main data-ui-page="admin" className="mx-auto min-h-[80vh] w-full max-w-[1600px] px-4 py-10 sm:px-6">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="eyebrow">Markdown editor</p>
-          <h1>{postNumber ? "글 편집" : "새 글 작성"}</h1>
+          <p className="text-sm font-black tracking-[0.16em] text-emerald-600">MARKDOWN EDITOR</p>
+          <h1 className="mt-2 text-3xl font-black">{postNumber ? "글 편집" : "새 글 작성"}</h1>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            작성 화면과 미리보기를 함께 확인하며 글을 완성합니다.
+          </p>
         </div>
-        <button className="primary-button save-button" type="submit" form="post-editor" disabled={isSaving}>
-          {isSaving ? "저장 중..." : publish ? "게시글 저장" : "초안 저장"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {postNumber ? (
+            <button
+              data-ui="action"
+              className="border border-red-300 px-5 py-3 font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+              disabled={isSaving || isDeleting}
+              onClick={() => void deletePost()}
+              type="button"
+            >
+              {isDeleting ? "삭제 중..." : "글 삭제"}
+            </button>
+          ) : null}
+          <button
+            data-ui="action"
+            className="bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+            type="submit"
+            form="post-editor"
+            disabled={isSaving || isDeleting}
+          >
+            {isSaving ? "저장 중..." : publish ? "게시글 저장" : "초안 저장"}
+          </button>
+        </div>
       </header>
 
-      {error ? <p className="notice notice-error">{error}</p> : null}
+      {error ? (
+        <p data-ui="notice" className="mb-6 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          {error}
+        </p>
+      ) : null}
 
-      <div className="editor-grid">
-        <form id="post-editor" className="editor-form" onSubmit={handleSubmit}>
-          <label className="field">
-            <span>제목</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={240} required />
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6">
+          <form
+            data-ui="panel"
+            id="post-editor"
+            className="min-w-0 space-y-5 bg-white p-5 sm:p-6 dark:bg-[#252525]"
+            onSubmit={handleSubmit}
+          >
+          <div className="grid gap-5 md:grid-cols-2">
+          <label className="block md:col-span-2">
+            <span className="mb-2 block text-sm font-bold">제목</span>
+            <input
+              data-ui="input"
+              className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              maxLength={240}
+              required
+            />
           </label>
-          <label className="field">
-            <span>설명</span>
-            <input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={500} />
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold">설명</span>
+            <input
+              data-ui="input"
+              className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              maxLength={500}
+            />
           </label>
-          <label className="field">
-            <span>카테고리</span>
-            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold">카테고리</span>
+            <select
+              data-ui="input"
+              className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
+              value={categoryId}
+              onChange={(event) => setCategoryId(event.target.value)}
+            >
               <option value="">분류 없음</option>
               {categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
             </select>
           </label>
-          <label className="field">
-            <span>Markdown 본문</span>
-            <span className="editor-toolbar" role="toolbar" aria-label="Markdown 서식">
-              <button type="button" onClick={() => insertMarkdown("## ", "", "소제목")}>H2</button>
-              <button type="button" onClick={() => insertMarkdown("**", "**")}>굵게</button>
-              <button type="button" onClick={() => insertMarkdown("[", "](https://)", "링크 이름")}>링크</button>
-              <button type="button" onClick={() => insertMarkdown("- ", "", "목록")}>목록</button>
-              <button type="button" onClick={() => insertMarkdown("```\n", "\n```", "code")}>코드</button>
-              <button type="button" onClick={() => insertMarkdown("> ", "", "인용")}>인용</button>
+          </div>
+          <label className="block">
+            <span className="mb-2 block text-sm font-bold">Markdown 본문</span>
+            <span
+              className="mb-3 block border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50"
+              role="toolbar"
+              aria-label="Markdown 서식"
+            >
+              <span className="flex flex-wrap gap-2">
+                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("## ", "", "소제목")}>H2</button>
+                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("**", "**")}>굵게</button>
+                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("[", "](https://)", "링크 이름")}>링크</button>
+                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("- ", "", "목록")}>목록</button>
+                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("```\n", "\n```", "code")}>코드</button>
+                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("> ", "", "인용")}>인용</button>
+              </span>
             </span>
-            <textarea ref={editorRef} className="markdown-editor" value={content} onChange={(event) => setContent(event.target.value)} required spellCheck={false} />
+            <textarea
+              data-ui="input"
+              ref={editorRef}
+              className="min-h-[520px] w-full resize-y border border-gray-300 bg-transparent px-4 py-3 font-mono text-sm leading-6 dark:border-gray-600"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              required
+              spellCheck={false}
+            />
           </label>
-          <label className="publish-control">
-            <input type="checkbox" checked={publish} onChange={(event) => setPublish(event.target.checked)} />
-            공개 게시
+          <label data-ui="row" className="flex cursor-pointer items-center gap-3 border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-bold dark:border-gray-600 dark:bg-gray-800/50">
+            <input className="size-4 accent-emerald-600" type="checkbox" checked={publish} onChange={(event) => setPublish(event.target.checked)} />
+            <span>
+              공개 게시
+              <small className="ml-2 font-normal text-gray-500 dark:text-gray-400">끄면 초안으로 저장됩니다.</small>
+            </span>
           </label>
-        </form>
+          </form>
 
-        <section className="preview-panel">
-          <p className="eyebrow">Preview</p>
-          {categories.find((category) => category.id === categoryId) ? <p className="category-kicker">{categories.find((category) => category.id === categoryId)?.name}</p> : null}
-          <h1>{title || "제목 미리보기"}</h1>
-          {description ? <p className="lead">{description}</p> : null}
-          <MarkdownContent source={content} />
+          {postNumber ? (
+            <PostAssetManager postNumber={postNumber} onInsertMarkdown={insertAssetMarkdown} />
+          ) : (
+            <section data-ui="panel" className="bg-white p-5 sm:p-6 dark:bg-[#252525]">
+              <p className="text-sm font-black tracking-[0.16em] text-emerald-600">POST ASSETS</p>
+              <h2 className="mt-2 text-2xl font-black">이미지·PDF 첨부</h2>
+              <p data-ui="notice" className="mt-4 bg-amber-50 p-4 text-sm font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                첨부 파일은 글을 먼저 저장한 뒤 편집 화면에서 추가할 수 있습니다.
+              </p>
+            </section>
+          )}
+        </div>
+
+        <section data-ui="panel" className="post-view min-h-[500px] min-w-0 overflow-auto bg-white p-5 sm:p-7 dark:bg-[#252525] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+          <p className="mb-5 text-sm font-black tracking-[0.16em] text-emerald-600">MARKDOWN PREVIEW</p>
+          <header className="mb-6 border-b border-gray-200 pb-6 dark:border-gray-700">
+            {categories.find((category) => category.id === categoryId) ? (
+              <p className="mb-2 text-sm font-bold text-emerald-600">
+                {categories.find((category) => category.id === categoryId)?.name}
+              </p>
+            ) : null}
+            <h1 className="text-3xl font-black leading-tight sm:text-4xl">{title || "제목 미리보기"}</h1>
+            {description ? <p className="mt-3 leading-7 text-gray-600 dark:text-gray-300">{description}</p> : null}
+          </header>
+          <div className="post-view-body">
+            <div className="post-view-markdown rounded-md p-1 sm:p-3">
+              <MarkdownContent source={content} />
+            </div>
+          </div>
         </section>
       </div>
     </main>

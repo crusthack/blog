@@ -41,6 +41,17 @@ export type PostDetail = PostSummary & {
   createdAtUtc: string;
 };
 
+export type PostAsset = {
+  id: string;
+  name: string;
+  extension: ".jpg" | ".png" | ".pdf";
+  contentType: "image/jpeg" | "image/png" | "application/pdf";
+  size: number;
+  url: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+};
+
 export type ProblemDetails = {
   title?: string;
   detail?: string;

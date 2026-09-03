@@ -15,6 +15,11 @@ apiServerUrl.pathname = apiServerUrl.pathname.replace(/\/+$/, "");
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  experimental: {
+    // Local development sends /api uploads through the Next.js proxy. Keep its
+    // buffer above the Backend's 25MB PDF limit, including multipart overhead.
+    proxyClientMaxBodySize: "32mb",
+  },
   async rewrites() {
     return [
       {

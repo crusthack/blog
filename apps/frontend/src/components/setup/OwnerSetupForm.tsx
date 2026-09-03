@@ -72,33 +72,42 @@ export function OwnerSetupForm() {
   }
 
   if (statusError) {
-    return <div className="notice notice-error">{statusError}</div>;
+    return (
+      <div data-ui="notice" className="bg-red-50 p-4 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
+        {statusError}
+      </div>
+    );
   }
 
   if (!status) {
-    return <div className="notice">Setup 상태를 불러오고 있습니다.</div>;
+    return (
+      <div data-ui="notice" className="bg-gray-50 p-4 text-sm font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+        Setup 상태를 불러오고 있습니다.
+      </div>
+    );
   }
 
   if (createdOwner) {
     return (
-      <div className="notice notice-success">
+      <div data-ui="notice" className="bg-emerald-50 p-4 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
         <strong>{createdOwner.username}</strong> Owner 계정이 생성되었습니다.{" "}
-        <Link href="/login">Owner로 로그인</Link>
+        <Link className="underline underline-offset-2" href="/login">Owner로 로그인</Link>
       </div>
     );
   }
 
   if (!status.requiresSetup) {
     return (
-      <div className="notice notice-success">
-        Owner 초기 설정이 이미 완료되었습니다. <Link href="/">홈으로 이동</Link>
+      <div data-ui="notice" className="bg-emerald-50 p-4 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+        Owner 초기 설정이 이미 완료되었습니다.{" "}
+        <Link className="underline underline-offset-2" href="/">홈으로 이동</Link>
       </div>
     );
   }
 
   if (!status.setupCodeConfigured) {
     return (
-      <div className="notice notice-error">
+      <div data-ui="notice" className="bg-red-50 p-4 text-sm font-semibold leading-6 text-red-700 dark:bg-red-950/40 dark:text-red-300">
         Backend에 유효한 Setup Code 파일이 설정되지 않았습니다. 32바이트 이상의 임의 코드를
         secret 파일로 제공한 후 다시 시도하세요.
       </div>
@@ -106,15 +115,25 @@ export function OwnerSetupForm() {
   }
 
   return (
-    <form className="setup-form" onSubmit={handleSubmit}>
-      <div className="field">
-        <label htmlFor="setupCode">Setup Code</label>
-        <input id="setupCode" name="setupCode" type="password" autoComplete="off" required />
+    <form autoComplete="on" className="space-y-5" onSubmit={handleSubmit}>
+      <div>
+        <label className="mb-2 block text-sm font-bold" htmlFor="setupCode">Setup Code</label>
+        <input
+          data-ui="input"
+          className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
+          id="setupCode"
+          name="setupCode"
+          type="password"
+          autoComplete="off"
+          required
+        />
       </div>
 
-      <div className="field">
-        <label htmlFor="username">사용자명</label>
+      <div>
+        <label className="mb-2 block text-sm font-bold" htmlFor="username">사용자명</label>
         <input
+          data-ui="input"
+          className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
           id="username"
           name="username"
           type="text"
@@ -124,12 +143,14 @@ export function OwnerSetupForm() {
           pattern="[a-zA-Z0-9._-]+"
           required
         />
-        <p className="hint">영문, 숫자, 점, 밑줄과 하이픈을 사용할 수 있습니다.</p>
+        <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">영문, 숫자, 점, 밑줄과 하이픈을 사용할 수 있습니다.</p>
       </div>
 
-      <div className="field">
-        <label htmlFor="password">비밀번호</label>
+      <div>
+        <label className="mb-2 block text-sm font-bold" htmlFor="password">비밀번호</label>
         <input
+          data-ui="input"
+          className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
           id="password"
           name="password"
           type="password"
@@ -138,12 +159,14 @@ export function OwnerSetupForm() {
           maxLength={128}
           required
         />
-        <p className="hint">8자 이상이며 서로 다른 문자를 4개 이상 포함해야 합니다.</p>
+        <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">8자 이상이며 서로 다른 문자를 4개 이상 포함해야 합니다.</p>
       </div>
 
-      <div className="field">
-        <label htmlFor="passwordConfirmation">비밀번호 확인</label>
+      <div>
+        <label className="mb-2 block text-sm font-bold" htmlFor="passwordConfirmation">비밀번호 확인</label>
         <input
+          data-ui="input"
+          className="w-full border border-gray-300 bg-transparent px-4 py-3 dark:border-gray-600"
           id="passwordConfirmation"
           name="passwordConfirmation"
           type="password"
@@ -154,9 +177,18 @@ export function OwnerSetupForm() {
         />
       </div>
 
-      {submitError ? <div className="notice notice-error">{submitError}</div> : null}
+      {submitError ? (
+        <div data-ui="notice" className="bg-red-50 p-3 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          {submitError}
+        </div>
+      ) : null}
 
-      <button className="primary-button" type="submit" disabled={isSubmitting}>
+      <button
+        data-ui="action"
+        className="w-full bg-emerald-600 px-4 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+        type="submit"
+        disabled={isSubmitting}
+      >
         {isSubmitting ? "Owner를 생성하고 있습니다..." : "Owner 계정 생성"}
       </button>
     </form>

@@ -1,20 +1,33 @@
-import { PostList } from "@/components/posts/PostList";
+import type { Metadata } from "next";
+import { BlogFrame } from "@/components/BlogFrame";
+import { MarkdownContent } from "@/components/posts/MarkdownContent";
+import { getHomeContent } from "@/lib/homeContent";
+
+export function generateMetadata(): Metadata {
+  const home = getHomeContent();
+  return {
+    title: home.title,
+    description: home.description,
+  };
+}
 
 export default function Home() {
+  const home = getHomeContent();
+
   return (
-    <main className="content-shell">
-      <section className="home-hero">
-        <p className="eyebrow">Research · Engineering · Notes</p>
-        <h1>배운 것을 기록하고,<br /><em>직접 실행해 보는</em> 공간.</h1>
-        <p className="muted">
-          프로그래밍 언어, 계산 이론, 형식 논리와 시스템에 관한 개인 연구 노트입니다.
-        </p>
-        <div className="hero-rule" aria-hidden="true"><span>01</span></div>
-      </section>
-      <section>
-        <div className="section-heading"><div><p className="eyebrow">Archive</p><h2>최근 글</h2></div></div>
-        <PostList />
-      </section>
-    </main>
+    <BlogFrame>
+      <article className="legacy-home-document post-view" data-view="post">
+        <header className="legacy-document-header">
+          <h1>{home.title}</h1>
+          {home.date ? <time dateTime={home.date}>{home.date}</time> : null}
+          <p>{home.description}</p>
+        </header>
+        <div className="post-view-body">
+          <div className="post-view-markdown">
+            <MarkdownContent source={home.markdown} />
+          </div>
+        </div>
+      </article>
+    </BlogFrame>
   );
 }

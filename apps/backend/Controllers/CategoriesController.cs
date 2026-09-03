@@ -5,6 +5,7 @@ using Blog.Api.Data;
 using Blog.Api.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blog.Api.Controllers;
@@ -15,6 +16,7 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 {
     [AllowAnonymous]
     [HttpGet]
+    [EnableRateLimiting("public-read")]
     public async Task<ActionResult<IReadOnlyList<CategoryResponse>>> GetCategories()
     {
         var canManage = User.IsInRole(Roles.Owner);

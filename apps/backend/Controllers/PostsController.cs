@@ -3,18 +3,24 @@ using System.Security.Claims;
 using Blog.Api.Auth;
 using Blog.Api.Data;
 using Blog.Api.Models;
+using Blog.Api.Storage;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace Blog.Api.Controllers;
 
 [ApiController]
 [Route("api/posts")]
-public sealed class PostsController(BlogDbContext db) : ControllerBase
+public sealed class PostsController(
+    BlogDbContext db,
+    PostAssetStorage assetStorage,
+    ILogger<PostsController> logger) : ControllerBase
 {
     [AllowAnonymous]
     [HttpGet]
+    [EnableRateLimiting("public-read")]
     public async Task<ActionResult<IReadOnlyList<PostSummaryResponse>>> GetPosts(
         [FromQuery] Guid? categoryId,
         [FromQuery, StringLength(120)] string? query)
@@ -53,6 +59,7 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
 
     [AllowAnonymous]
     [HttpGet("{postNumber:long}")]
+    [EnableRateLimiting("public-read")]
     public async Task<ActionResult<PostDetailResponse>> GetPost(long postNumber)
     {
         var post = await db.Posts.AsNoTracking()
@@ -60,7 +67,8 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
 
         if (post is null ||
-            post.Status != PostStatuses.Published && !User.IsInRole(Roles.Owner))
+            !User.IsInRole(Roles.Owner) &&
+            (post.Status != PostStatuses.Published || post.Category is { IsVisible: false }))
             return NotFound();
 
         return Ok(ToDetail(post));
@@ -138,11 +146,41 @@ public sealed class PostsController(BlogDbContext db) : ControllerBase
     [HttpDelete("{postNumber:long}")]
     public async Task<IActionResult> Delete(long postNumber)
     {
-        var post = await db.Posts.SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
+        var post = await db.Posts
+            .Include(candidate => candidate.Assets)
+            .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
         if (post is null) return NotFound();
 
+        var storageFileNames = post.Assets
+            .Select(asset => asset.StorageFileName)
+            .ToArray();
         db.Posts.Remove(post);
         await db.SaveChangesAsync();
+
+        foreach (var storageFileName in storageFileNames)
+        {
+            try
+            {
+                assetStorage.DeleteIfExists(storageFileName);
+            }
+            catch (IOException exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Failed to remove post asset {StorageFileName} after deleting post {PostNumber}.",
+                    storageFileName,
+                    postNumber);
+            }
+            catch (UnauthorizedAccessException exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Failed to remove post asset {StorageFileName} after deleting post {PostNumber}.",
+                    storageFileName,
+                    postNumber);
+            }
+        }
+
         return NoContent();
     }
 

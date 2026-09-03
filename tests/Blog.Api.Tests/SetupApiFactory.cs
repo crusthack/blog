@@ -1,5 +1,6 @@
 using Blog.Api.Data;
 using Blog.Api.Setup;
+using Blog.Api.Storage;
 using Microsoft.Data.Sqlite;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -17,6 +18,8 @@ public sealed class SetupApiFactory : WebApplicationFactory<Program>
         Path.GetTempPath(),
         $"blog-api-tests-{Guid.NewGuid():N}");
 
+    public string AssetStoragePath => Path.Combine(tempDirectory, "post-assets");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         Directory.CreateDirectory(tempDirectory);
@@ -32,6 +35,8 @@ public sealed class SetupApiFactory : WebApplicationFactory<Program>
             services.AddDbContext<BlogDbContext>(options =>
                 options.UseSqlite($"Data Source={databasePath}"));
             services.PostConfigure<BootstrapOptions>(options => options.TokenFile = tokenPath);
+            services.PostConfigure<PostAssetStorageOptions>(
+                options => options.StoragePath = AssetStoragePath);
         });
     }
 
