@@ -245,6 +245,9 @@ export function SiteHeader() {
                 </span>
               </summary>
               <div className="site-nav-dropdown absolute right-0 z-50 mt-2 w-52 overflow-hidden border py-2">
+                <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold" href="/posts" onClick={closeMenus}>
+                  전체 글
+                </Link>
                 {categories.length > 0 ? (
                   categories.map((category) => (
                     <Link
@@ -254,9 +257,6 @@ export function SiteHeader() {
                       onClick={closeMenus}
                     >
                       <span className="truncate">{category.name}</span>
-                      <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
-                        {category.postCount}
-                      </span>
                     </Link>
                   ))
                 ) : (
@@ -295,6 +295,10 @@ export function SiteHeader() {
                     onClick={closeMenus}
                   >
                     새 글 작성
+                  </Link>
+                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
+                    href="/posts/manage" onClick={closeMenus}>
+                    게시글 전체 관리
                   </Link>
                   <Link
                     className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"

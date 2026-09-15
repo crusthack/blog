@@ -1,252 +1,192 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, type PostSummary, readProblem, visibilityLabels } from "@/lib/contracts";
+import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 
-export function PostList({ categorySlug }: { categorySlug?: string }) {
-  const { user, isLoading: isAuthLoading } = useAuth();
+type Props = { categorySlug?: string; manage?: boolean };
+const pageSize = 20;
+
+export function PostList({ categorySlug, manage = false }: Props) {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  useEffect(() => {
+    if (manage && !isLoading && !user?.isOwner) router.replace("/login");
+  }, [manage, isLoading, user, router]);
+  if (isLoading || (manage && !user?.isOwner)) {
+    return <p className="board-notice" role="status">{isLoading ? "글 목록을 준비하고 있습니다." : "로그인이 필요합니다."}</p>;
+  }
+  return <PostDirectory key={`${categorySlug ?? "all"}:${manage}:${user?.id ?? "visitor"}`}
+    categorySlug={categorySlug} manage={manage} isOwner={Boolean(user?.isOwner)} />;
+}
+
+function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boolean }) {
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
-  const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-
-  const activeCategory = useMemo(
-    () => categories.find((category) => category.slug === categorySlug),
-    [categories, categorySlug],
-  );
-
-  const loadCategories = useCallback(async () => {
-    const response = await fetch("/api/categories", { cache: "no-store", credentials: "include" });
-    if (!response.ok) throw new Error(await readProblem(response, "카테고리를 불러오지 못했습니다."));
-    setCategories((await response.json()) as Category[]);
-    setCategoriesLoaded(true);
-  }, []);
-
-  const loadPosts = useCallback(async (categoryId?: string) => {
-    const params = new URLSearchParams();
-    if (categoryId) params.set("categoryId", categoryId);
-    if (searchQuery) params.set("query", searchQuery);
-    const response = await fetch(`/api/posts${params.size ? `?${params}` : ""}`, {
-      cache: "no-store",
-      credentials: "include",
-    });
-    if (!response.ok) throw new Error(await readProblem(response, "글 목록을 불러오지 못했습니다."));
-    setPosts((await response.json()) as PostSummary[]);
-  }, [searchQuery]);
+  const [loadError, setLoadError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [message, setMessage] = useState("");
+  const [reload, setReload] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [visibility, setVisibility] = useState("");
+  const [page, setPage] = useState(1);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
   useEffect(() => {
-    if (isAuthLoading) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      setIsLoading(true);
-      setError("");
-      void loadCategories()
-        .catch((reason: unknown) => {
-          if (!cancelled) {
-            setError(reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.");
-            setIsLoading(false);
-          }
-        })
-        .finally(() => { if (!cancelled && !categorySlug) setIsLoading(false); });
-    }, 0);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [isAuthLoading, loadCategories, categorySlug, user]);
-
-  useEffect(() => {
-    if (isAuthLoading || !categoriesLoaded) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      if (categorySlug && !activeCategory) {
-        setError("존재하지 않는 카테고리입니다.");
-        setIsLoading(false);
-        return;
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const [postResponse, categoryResponse] = await Promise.all([
+          fetch("/api/posts", { cache: "no-store", credentials: "include", signal: controller.signal }),
+          fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal }),
+        ]);
+        if (!postResponse.ok) throw new Error(await readProblem(postResponse, "글 목록을 불러오지 못했습니다."));
+        if (!categoryResponse.ok) throw new Error(await readProblem(categoryResponse, "카테고리를 불러오지 못했습니다."));
+        const [loadedPosts, loadedCategories] = await Promise.all([
+          postResponse.json() as Promise<PostSummary[]>, categoryResponse.json() as Promise<Category[]>,
+        ]);
+        if (controller.signal.aborted) return;
+        setPosts(loadedPosts.sort((left, right) => right.postNumber - left.postNumber));
+        setCategories(loadedCategories);
+      } catch (reason) {
+        if (!controller.signal.aborted) setLoadError(reason instanceof Error ? reason.message : "목록을 불러오지 못했습니다.");
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
       }
-      setIsLoading(true);
-      setError("");
-      void loadPosts(activeCategory?.id)
-        .catch((reason: unknown) => {
-          if (!cancelled) setError(reason instanceof Error ? reason.message : "글 목록을 불러오지 못했습니다.");
-        })
-        .finally(() => { if (!cancelled) setIsLoading(false); });
-    }, 0);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [activeCategory, categoriesLoaded, categorySlug, isAuthLoading, loadPosts, user]);
+    }
+    void load();
+    return () => controller.abort();
+  }, [reload]);
+
+  const activeCategory = categories.find((category) => category.slug === categorySlug);
+  const missingCategory = Boolean(categorySlug && !isLoading && !loadError && !activeCategory);
+  const selectedCategory = activeCategory?.id ?? categoryId;
+  const filtered = posts.filter((post) => {
+    if (selectedCategory === "uncategorized" ? post.categoryId !== null : selectedCategory && post.categoryId !== selectedCategory) return false;
+    if (visibility && post.visibility !== visibility) return false;
+    return !search || `${post.title}\n${post.description ?? ""}`.toLocaleLowerCase("ko-KR").includes(search.toLocaleLowerCase("ko-KR"));
+  });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visiblePosts = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const firstPage = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
+  const pageNumbers = Array.from({ length: Math.min(5, pageCount) }, (_, index) => firstPage + index);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSearchQuery(searchInput.trim());
+    setSearch(searchInput.trim());
+    setPage(1);
   }
 
-  const status = isLoading || isAuthLoading
-    ? "글 목록을 불러오고 있습니다."
-    : error;
+  async function deletePost(post: PostSummary) {
+    if (deleting !== null || !window.confirm(`“${post.title}” 글과 첨부 파일을 삭제할까요? 삭제 후에는 복구할 수 없습니다.`)) return;
+    setDeleting(post.postNumber);
+    setActionError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/posts/${post.postNumber}`, { method: "DELETE", credentials: "include" });
+      if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
+      setPosts((previous) => previous.filter((item) => item.postNumber !== post.postNumber));
+      setMessage(`“${post.title}” 글을 삭제했습니다.`);
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "글을 삭제하지 못했습니다.");
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   return (
-    <div>
-      {!categorySlug ? (
-        <section className="border-y border-gray-200 py-14 dark:border-gray-700">
-          <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-black tracking-[0.18em] text-emerald-600">CATEGORIES</p>
-              <h2 className="mt-2 text-3xl font-black">카테고리 탐색</h2>
-            </div>
-            <span className="text-sm font-bold text-gray-500">전체 {categories.length}개</span>
-          </div>
-          {categories.length > 0 ? (
-            <div className="grid gap-5 md:grid-cols-2">
-              {categories.map((category) => (
-                <Link
-                  data-ui="panel-accent"
-                  className="group flex items-center justify-between gap-5 bg-white p-6 transition hover:-translate-y-0.5 hover:border-emerald-400 hover:shadow-md dark:bg-[#252525]"
-                  href={`/categories/${category.slug}`}
-                  key={category.id}
-                >
-                  <div>
-                    <h3 className="text-2xl font-black transition group-hover:text-emerald-600">{category.name}</h3>
-                    <p className="mt-2 text-gray-500 dark:text-gray-400">
-                      {category.description ?? "이 카테고리의 포스트를 살펴봅니다."}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className="font-mono text-xs font-black text-gray-400">{category.postCount}</span>
-                    <span className="text-2xl text-emerald-600">→</span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <EmptyState>공개된 카테고리가 없습니다.</EmptyState>
-          )}
-        </section>
-      ) : (
-        <header className="mb-10 border-b border-gray-200 pb-8 dark:border-gray-700">
-          <p className="text-sm font-black tracking-[0.18em] text-emerald-600">CATEGORY</p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-4xl font-black tracking-tight md:text-5xl">
-                {activeCategory?.name ?? "카테고리"}
-              </h1>
-              {activeCategory?.description ? (
-                <p className="mt-4 max-w-2xl text-lg leading-relaxed text-gray-500 dark:text-gray-300">
-                  {activeCategory.description}
-                </p>
-              ) : null}
-            </div>
-            <Link className="font-bold text-emerald-600 hover:text-emerald-700" href="/">전체 글 보기 →</Link>
-          </div>
-        </header>
-      )}
-
-      <section className={categorySlug ? "pb-14" : "py-14"}>
-        <div className="mb-7 flex flex-wrap items-end justify-between gap-5">
-          <div>
-            <p className="text-sm font-black tracking-[0.18em] text-emerald-600">
-              {categorySlug ? "POSTS" : "RECENT POSTS"}
-            </p>
-            <h2 className="mt-2 text-3xl font-black">
-              {categorySlug ? `${activeCategory?.name ?? "카테고리"}의 글` : "최근 글 보기"}
-            </h2>
-          </div>
-          <p className="text-sm text-gray-500">총 {posts.length}개의 글</p>
+    <section className="post-board" aria-label={manage ? "전체 게시글 관리" : "게시글 목록"}>
+      <header className="board-heading">
+        <div>
+          <h1>{manage ? "게시글 전체 관리" : categorySlug ? activeCategory?.name ?? "카테고리" : "전체 글"}</h1>
+          <p>{manage ? "공개·비공개·코드 보호 글을 검색하고 관리합니다." : activeCategory?.description ?? "최신 글부터 순서대로 확인하세요."}</p>
         </div>
-
-        <form className="mb-7 flex flex-col gap-2 sm:flex-row" role="search" onSubmit={submitSearch}>
-          <label className="sr-only" htmlFor="post-search">글 검색</label>
-          <input
-            data-ui="input"
-            className="min-w-0 flex-1 px-4 py-3"
-            id="post-search"
-            onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="제목과 설명에서 검색"
-            type="search"
-            value={searchInput}
-          />
-          <button data-ui="action" className="bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-700" type="submit">
-            검색
-          </button>
-          {searchQuery ? (
-            <button
-              data-ui="action"
-              className="border border-gray-300 bg-white px-5 py-3 font-bold transition hover:bg-gray-100 dark:border-gray-600 dark:bg-[#292929] dark:hover:bg-gray-700"
-              onClick={() => { setSearchInput(""); setSearchQuery(""); }}
-              type="button"
-            >
-              초기화
-            </button>
-          ) : null}
-        </form>
-
-        {status ? (
-          <p data-ui="notice" className={error ? "border-red-500 bg-red-50 p-4 text-red-700 dark:bg-red-950/30 dark:text-red-300" : "p-4 text-gray-500"}>
-            {status}
-          </p>
-        ) : null}
-        {!isLoading && !isAuthLoading && !error && posts.length === 0 ? (
-          <div data-ui="panel" className="border-dashed p-10 text-center text-gray-500">
-            <p>{searchQuery ? "검색 결과가 없습니다." : "아직 작성된 글이 없습니다."}</p>
-            {user?.isOwner ? (
-              <Link className="mt-4 inline-block font-bold text-emerald-600 hover:text-emerald-700" href="/write">
-                첫 글 작성하기 →
-              </Link>
-            ) : null}
+        <div className="board-heading-actions">
+          {categorySlug || manage ? <Link href="/posts">전체 글 보기</Link> : null}
+          {isOwner ? <Link className="board-primary" href="/write">글쓰기</Link> : null}
+        </div>
+      </header>
+      <form className="board-filters" role="search" onSubmit={submitSearch}>
+        {!categorySlug ? <label><span className="sr-only">카테고리 필터</span>
+          <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1); }}>
+            <option value="">전체 카테고리</option><option value="uncategorized">미분류</option>
+            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}{!category.isVisible ? " (숨김)" : ""}</option>)}
+          </select>
+        </label> : null}
+        {manage ? <label><span className="sr-only">공개 범위 필터</span>
+          <select value={visibility} onChange={(event) => { setVisibility(event.target.value); setPage(1); }}>
+            <option value="">모든 공개 범위</option>
+            {Object.entries(visibilityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label> : null}
+        <label className="board-search"><span className="sr-only">제목과 설명 검색</span>
+          <input type="search" placeholder="제목·설명 검색" value={searchInput} maxLength={120} onChange={(event) => setSearchInput(event.target.value)} />
+        </label>
+        <button type="submit">검색</button>
+        {search || categoryId || visibility ? <button type="button" onClick={() => {
+          setSearch(""); setSearchInput(""); setCategoryId(""); setVisibility(""); setPage(1);
+        }}>초기화</button> : null}
+      </form>
+      {actionError ? <p className="board-notice board-error" role="alert">{actionError}</p> : null}
+      {message ? <p className="board-notice" role="status">{message}</p> : null}
+      {isLoading ? <p className="board-notice" role="status">글 목록을 불러오고 있습니다.</p>
+        : loadError ? <div className="board-notice board-error" role="alert">{loadError} <button type="button" onClick={() => {
+          setLoadError(""); setIsLoading(true); setReload((value) => value + 1);
+        }}>다시 시도</button></div>
+        : missingCategory ? <p className="board-notice" role="alert">존재하지 않는 카테고리입니다.</p>
+        : <>
+          <div className="board-summary"><span>총 <strong>{filtered.length}</strong>개</span><span>{currentPage} / {pageCount} 페이지</span></div>
+          <div className="board-table-wrap">
+            <table className={`board-table${manage ? " board-table-manage" : ""}`}>
+              <caption className="sr-only">{manage ? "게시글 전체 관리 목록" : "게시글 목록"}</caption>
+              <thead><tr>
+                <th scope="col" className="board-number">번호</th><th scope="col" className="board-category">분류</th>
+                <th scope="col" className="board-title">제목</th><th scope="col" className="board-visibility">공개 범위</th>
+                <th scope="col" className="board-date">{manage ? "수정일" : "작성일"}</th>
+                {manage ? <th scope="col" className="board-actions">관리</th> : null}
+              </tr></thead>
+              <tbody>
+                {visiblePosts.map((post) => <tr key={post.postNumber}>
+                  <td className="board-number">{post.postNumber}</td>
+                  <td className="board-category"><span title={post.categoryName ?? "미분류"}>{post.categoryName ?? "미분류"}</span></td>
+                  <td className="board-title"><Link href={`/posts/${post.postNumber}`} title={post.title}>{post.title}</Link></td>
+                  <td className="board-visibility"><span data-visibility={post.visibility}>{visibilityLabels[post.visibility]}</span></td>
+                  <td className="board-date"><time dateTime={manage ? post.updatedAtUtc : post.publishedAtUtc ?? post.updatedAtUtc}>
+                    {formatDate(manage ? post.updatedAtUtc : post.publishedAtUtc ?? post.updatedAtUtc)}
+                  </time></td>
+                  {manage ? <td className="board-actions"><div>
+                    <Link href={`/write/${post.postNumber}`} aria-label={`${post.title} 편집`}>편집</Link>
+                    <button type="button" disabled={deleting !== null} aria-label={`${post.title} 삭제`}
+                      onClick={() => void deletePost(post)}>{deleting === post.postNumber ? "삭제 중" : "삭제"}</button>
+                  </div></td> : null}
+                </tr>)}
+                {visiblePosts.length === 0 ? <tr><td colSpan={manage ? 6 : 5} className="board-empty">
+                  {search || categoryId || visibility ? "조건에 맞는 글이 없습니다." : "등록된 글이 없습니다."}
+                </td></tr> : null}
+              </tbody>
+            </table>
           </div>
-        ) : null}
-        {!isLoading && !error && posts.length > 0 ? (
-          <div className="grid gap-5 md:grid-cols-2">
-            {posts.map((post) => (
-              <article
-                data-ui="panel"
-                className="group flex min-h-56 flex-col bg-white p-6 transition hover:-translate-y-1 hover:border-emerald-300 hover:shadow-md dark:bg-[#252525]"
-                key={post.postNumber}
-              >
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-bold">{visibilityLabels[post.visibility]}</span>
-                    {post.categoryName ? (
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                        {post.categoryName}
-                      </span>
-                    ) : null}
-                  </div>
-                  <time className="text-gray-500" dateTime={post.updatedAtUtc}>{formatDate(post.updatedAtUtc)}</time>
-                </div>
-                <h3 className="text-2xl font-black transition group-hover:text-emerald-600">
-                  <Link href={`/posts/${post.postNumber}`}>{post.title}</Link>
-                </h3>
-                {post.description ? (
-                  <p className="mt-3 line-clamp-3 leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>
-                ) : null}
-                <div className="mt-auto flex items-end justify-between gap-4 pt-6">
-                  <Link className="font-bold text-emerald-600" href={`/posts/${post.postNumber}`}>글 읽기 →</Link>
-                  {user?.isOwner ? (
-                    <Link className="text-sm font-bold text-gray-500 hover:text-emerald-600" href={`/write/${post.postNumber}`}>편집</Link>
-                  ) : null}
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : null}
-      </section>
-    </div>
-  );
-}
-
-function EmptyState({ children }: { children: string }) {
-  return (
-    <p data-ui="panel" className="border-dashed p-10 text-center text-gray-500">
-      {children}
-    </p>
+          {pageCount > 1 ? <nav className="board-pagination" aria-label="게시글 페이지">
+            <button type="button" disabled={currentPage === 1} onClick={() => setPage(1)}>처음</button>
+            <button type="button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>이전</button>
+            {pageNumbers.map((number) => <button key={number} type="button" aria-label={`${number}페이지`}
+              aria-current={number === currentPage ? "page" : undefined} onClick={() => setPage(number)}>{number}</button>)}
+            <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음</button>
+            <button type="button" disabled={currentPage === pageCount} onClick={() => setPage(pageCount)}>마지막</button>
+          </nav> : null}
+        </>}
+    </section>
   );
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "medium",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat("ko-KR", { year: "2-digit", month: "2-digit", day: "2-digit", timeZone: "Asia/Seoul" }).format(new Date(value));
 }

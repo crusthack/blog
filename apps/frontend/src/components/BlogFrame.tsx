@@ -81,6 +81,7 @@ export function BlogFrame({ children }: { children: ReactNode }) {
       <aside className="legacy-blog-sidebar legacy-blog-sidebar-left" aria-label="블로그 탐색">
         <section>
           <h2>최근 글 보기</h2>
+          <Link className="text-sm underline" href="/posts">전체 글 보기</Link>
           <PostLinks posts={recentPosts} emptyMessage="작성된 글이 없습니다." isLoading={isLoading} />
         </section>
 
