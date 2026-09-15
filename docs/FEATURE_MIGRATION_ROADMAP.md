@@ -44,6 +44,14 @@
 - API·SQLite 상태 확인 화면
 - 공개 읽기와 첨부 파일 요청 rate limit, SQLite WAL·busy timeout
 
+### 보호 글
+
+- 공개 / 비공개 / 코드로 열람 범위와 목록·검색·첨부 접근 제어
+- 글별 접근 코드 해시 저장, 기존 코드는 수정 화면에서 유지 또는 교체
+- 글·코드 버전·12시간 만료에 연결된 HttpOnly 열람 쿠키
+- 코드 변경과 공개 범위 변경 시 기존 권한 무효화
+- IP별 코드 입력 제한과 별도 코드 입력 화면
+
 ## 다음 순서
 
 ### 3단계: 콘텐츠 이전
@@ -53,13 +61,6 @@
 - 기존 글을 덮어쓰지 않는 idempotent import
 - `public/images` 참조 수집과 첨부 파일 이동
 - import 결과 보고서와 원본 대비 검증
-
-### 4단계: 보호 글
-
-- Public / OwnerOnly / PasswordProtected 공개 범위
-- 접근 코드의 단방향 검증값과 Owner 확인용 암호화 사본 분리
-- unlock token의 글·credential version 바인딩과 만료
-- 로그인 실패와 보호 코드 실패를 구분하는 프런트 처리
 
 ### 5단계: 슬라이드
 

@@ -149,8 +149,8 @@ curl --fail https://crusthack.com/
 ## 6. Owner 생성과 bootstrap 종료
 
 1. `https://crusthack.com/setup`에서 Setup Code로 Owner를 생성한다.
-2. 로그인하고 초안 글을 만든 뒤 익명 방문자에게 보이지 않는지 확인한다.
-3. 글을 게시하고 익명 방문자도 읽을 수 있는지 확인한다.
+2. 로그인하고 글을 게시한 뒤 익명 방문자도 바로 읽을 수 있는지 확인한다.
+3. 글을 수정하고 저장한 내용이 익명 방문자에게도 반영되는지 확인한다.
 4. 서버에서 bootstrap 종료 명령을 실행한다.
 
 ```bash

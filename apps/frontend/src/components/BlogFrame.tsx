@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { readProblem, type Category, type PostSummary } from "@/lib/contracts";
+import { readProblem, type Category, type PostSummary, visibilityLabels } from "@/lib/contracts";
 import { usefulSiteLinks } from "@/lib/siteLinks";
 
 export function BlogFrame({ children }: { children: ReactNode }) {
@@ -153,6 +153,7 @@ function PostLinks({
         <li key={post.postNumber}>
           <Link href={`/posts/${post.postNumber}`} title={post.title}>
             {post.title}
+            {post.visibility !== "Public" ? ` · ${visibilityLabels[post.visibility]}` : ""}
           </Link>
           <time dateTime={post.publishedAtUtc ?? post.updatedAtUtc}>
             {formatDate(post.publishedAtUtc ?? post.updatedAtUtc)}

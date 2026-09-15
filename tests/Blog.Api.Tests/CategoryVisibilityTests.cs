@@ -58,7 +58,6 @@ public sealed class CategoryVisibilityTests
                 Title = "Published but hidden",
                 Content = "# Hidden",
                 CategoryId = category.Id,
-                Publish = true,
             });
         Assert.Equal(HttpStatusCode.Created, postResponse.StatusCode);
         var post = Assert.IsType<PostDetailResponse>(

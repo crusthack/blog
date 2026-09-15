@@ -25,13 +25,21 @@ export type Category = {
   postCount: number;
 };
 
+export type PostVisibility = "Public" | "Private" | "CodeProtected";
+
+export const visibilityLabels: Record<PostVisibility, string> = {
+  Public: "공개",
+  Private: "비공개",
+  CodeProtected: "코드로 열람",
+};
+
 export type PostSummary = {
   postNumber: number;
   title: string;
   description: string | null;
   categoryId: string | null;
   categoryName: string | null;
-  status: "Draft" | "Published";
+  visibility: PostVisibility;
   updatedAtUtc: string;
   publishedAtUtc: string | null;
 };

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { PostAssetManager } from "@/components/posts/PostAssetManager";
-import { type Category, type PostDetail, readProblem } from "@/lib/contracts";
+import { type Category, type PostDetail, type PostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
 
@@ -17,7 +17,9 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   const [content, setContent] = useState(initialContent);
   const [categoryId, setCategoryId] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
-  const [publish, setPublish] = useState(false);
+  const [visibility, setVisibility] = useState<PostVisibility>("Public");
+  const [accessCode, setAccessCode] = useState("");
+  const [hasAccessCode, setHasAccessCode] = useState(false);
   const [isLoading, setIsLoading] = useState(Boolean(postNumber));
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -47,7 +49,9 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         setDescription(post.description ?? "");
         setContent(post.content);
         setCategoryId(post.categoryId ?? "");
-        setPublish(post.status === "Published");
+        setVisibility(post.visibility);
+        setHasAccessCode(post.visibility === "CodeProtected");
+        setAccessCode("");
       })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -85,7 +89,10 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         method: postNumber ? "PUT" : "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, content, categoryId: categoryId || null, publish }),
+        body: JSON.stringify({
+          title, description, content, categoryId: categoryId || null, visibility,
+          accessCode: visibility === "CodeProtected" && accessCode ? accessCode : null,
+        }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "글을 저장하지 못했습니다."));
       const saved = (await response.json()) as PostDetail;
@@ -188,7 +195,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
             form="post-editor"
             disabled={isSaving || isDeleting}
           >
-            {isSaving ? "저장 중..." : publish ? "게시글 저장" : "초안 저장"}
+            {isSaving ? "저장 중..." : postNumber ? "수정 저장" : visibility === "Private" ? "비공개로 저장" : "게시하기"}
           </button>
         </div>
       </header>
@@ -207,6 +214,36 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
             className="min-w-0 space-y-5 bg-white p-5 sm:p-6 dark:bg-[#252525]"
             onSubmit={handleSubmit}
           >
+          <fieldset className="space-y-3">
+            <legend className="mb-2 text-sm font-bold">공개 범위</legend>
+            <div className="flex flex-wrap gap-4">
+              {(Object.keys(visibilityLabels) as PostVisibility[]).map((value) => (
+                <label key={value} className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="visibility" value={value} checked={visibility === value}
+                    onChange={() => setVisibility(value)} />
+                  {visibilityLabels[value]}
+                </label>
+              ))}
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {visibility === "Public" ? "누구나 글과 첨부 파일을 볼 수 있습니다."
+                : visibility === "Private" ? "로그인한 Owner만 볼 수 있으며 목록과 검색에서 숨깁니다."
+                : "제목·설명은 공개되며 본문과 첨부 파일은 코드 입력 후 열립니다."}
+            </p>
+            {visibility === "CodeProtected" ? (
+              <label className="block text-sm font-bold">
+                접근 코드
+                <input data-ui="input" type="password" autoComplete="new-password"
+                  className="mt-2 block w-full border border-gray-300 bg-transparent px-4 py-3"
+                  value={accessCode} onChange={(event) => setAccessCode(event.target.value)}
+                  minLength={4} maxLength={128} required={!hasAccessCode}
+                  placeholder={hasAccessCode ? "비워 두면 기존 코드 유지" : "4~128자 코드 입력"} />
+                <span className="mt-2 block font-normal text-gray-500 dark:text-gray-400">
+                  {hasAccessCode ? "새 코드를 저장하면 이전 코드와 기존 열람 권한이 무효화됩니다." : "방문자에게 전달할 코드를 지정하세요."}
+                </span>
+              </label>
+            ) : null}
+          </fieldset>
           <div className="grid gap-5 md:grid-cols-2">
           <label className="block md:col-span-2">
             <span className="mb-2 block text-sm font-bold">제목</span>
@@ -267,13 +304,6 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
               required
               spellCheck={false}
             />
-          </label>
-          <label data-ui="row" className="flex cursor-pointer items-center gap-3 border border-gray-300 bg-gray-50 px-4 py-3 text-sm font-bold dark:border-gray-600 dark:bg-gray-800/50">
-            <input className="size-4 accent-emerald-600" type="checkbox" checked={publish} onChange={(event) => setPublish(event.target.checked)} />
-            <span>
-              공개 게시
-              <small className="ml-2 font-normal text-gray-500 dark:text-gray-400">끄면 초안으로 저장됩니다.</small>
-            </span>
           </label>
           </form>
 

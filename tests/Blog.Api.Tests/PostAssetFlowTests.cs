@@ -29,7 +29,7 @@ public sealed class PostAssetFlowTests
         using var owner = factory.CreateClient(options);
         using var visitor = factory.CreateClient(options);
         await CreateAndLoginOwnerAsync(owner, "asset-owner");
-        var post = await CreatePostAsync(owner, "Public assets", publish: true);
+        var post = await CreatePostAsync(owner, "Public assets");
         var route = $"/api/posts/{post.PostNumber}/assets";
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.GetAsync(route)).StatusCode);
@@ -121,7 +121,7 @@ public sealed class PostAssetFlowTests
     }
 
     [Fact]
-    public async Task Draft_and_hidden_category_assets_are_not_exposed_to_visitors()
+    public async Task New_post_assets_are_public_and_hidden_category_assets_are_private()
     {
         using var factory = new SetupApiFactory();
         var options = ClientOptions();
@@ -129,17 +129,17 @@ public sealed class PostAssetFlowTests
         using var visitor = factory.CreateClient(options);
         await CreateAndLoginOwnerAsync(owner, "private-asset-owner");
 
-        var draft = await CreatePostAsync(owner, "Draft asset", publish: false);
-        AssetPayload draftAsset;
+        var publicPost = await CreatePostAsync(owner, "Public asset");
+        AssetPayload publicAsset;
         using (var upload = await UploadAsync(
-                   owner, draft.PostNumber, PngBytes, "draft.png", "Draft", "image/png"))
+                   owner, publicPost.PostNumber, PngBytes, "public.png", "Public", "image/png"))
         {
             Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
-            draftAsset = Assert.IsType<AssetPayload>(await upload.Content.ReadFromJsonAsync<AssetPayload>());
+            publicAsset = Assert.IsType<AssetPayload>(await upload.Content.ReadFromJsonAsync<AssetPayload>());
         }
 
-        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(draftAsset.Url)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync(draftAsset.Url)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await visitor.GetAsync(publicAsset.Url)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync(publicAsset.Url)).StatusCode);
 
         var categoryResponse = await owner.PostAsJsonAsync(
             "/api/categories",
@@ -155,7 +155,6 @@ public sealed class PostAssetFlowTests
         var hiddenPost = await CreatePostAsync(
             owner,
             "Hidden category asset",
-            publish: true,
             category.Id);
 
         AssetPayload hiddenAsset;
@@ -179,7 +178,7 @@ public sealed class PostAssetFlowTests
         using var factory = new SetupApiFactory();
         using var owner = factory.CreateClient(ClientOptions());
         await CreateAndLoginOwnerAsync(owner, "asset-validation-owner");
-        var post = await CreatePostAsync(owner, "Asset validation", publish: false);
+        var post = await CreatePostAsync(owner, "Asset validation");
 
         AssetPayload first;
         using (var response = await UploadAsync(
@@ -265,7 +264,6 @@ public sealed class PostAssetFlowTests
     private static async Task<PostDetailResponse> CreatePostAsync(
         HttpClient owner,
         string title,
-        bool publish,
         Guid? categoryId = null)
     {
         var response = await owner.PostAsJsonAsync(
@@ -275,7 +273,6 @@ public sealed class PostAssetFlowTests
                 Title = title,
                 Content = $"# {title}",
                 CategoryId = categoryId,
-                Publish = publish,
             });
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return Assert.IsType<PostDetailResponse>(

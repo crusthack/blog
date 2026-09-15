@@ -10,7 +10,7 @@ namespace Blog.Api.Tests;
 public sealed class BasicPostFlowTests
 {
     [Fact]
-    public async Task Owner_can_login_write_a_draft_and_publish_it()
+    public async Task Owner_can_create_and_update_an_immediately_public_post()
     {
         using var factory = new SetupApiFactory();
         var clientOptions = new WebApplicationFactoryClientOptions
@@ -43,41 +43,45 @@ public sealed class BasicPostFlowTests
         Assert.Equal("owner", currentUser.GetProperty("username").GetString());
         Assert.False(currentUser.TryGetProperty("email", out _));
 
-        var draftResponse = await ownerClient.PostAsJsonAsync(
+        var createdResponse = await ownerClient.PostAsJsonAsync(
             "/api/posts",
             new CreatePostRequest
             {
                 Title = "Markdown test",
                 Description = "basic post flow",
                 Content = "# Hello\n\n- one\n- two",
-                Publish = false,
             });
-        Assert.Equal(HttpStatusCode.Created, draftResponse.StatusCode);
-        var draft = await draftResponse.Content.ReadFromJsonAsync<PostDetailResponse>();
-        Assert.NotNull(draft);
-        Assert.Equal("Draft", draft.Status);
+        Assert.Equal(HttpStatusCode.Created, createdResponse.StatusCode);
+        var created = await createdResponse.Content.ReadFromJsonAsync<PostDetailResponse>();
+        Assert.NotNull(created);
+        Assert.NotNull(created.PublishedAtUtc);
 
         var ownerListResponse = await ownerClient.GetAsync("/api/posts");
         Assert.Equal(HttpStatusCode.OK, ownerListResponse.StatusCode);
         var ownerPosts = await ownerListResponse.Content.ReadFromJsonAsync<PostSummaryResponse[]>();
-        Assert.Contains(ownerPosts!, post => post.PostNumber == draft.PostNumber);
+        Assert.Contains(ownerPosts!, post => post.PostNumber == created.PostNumber);
 
-        var hiddenResponse = await anonymousClient.GetAsync($"/api/posts/{draft.PostNumber}");
-        Assert.Equal(HttpStatusCode.NotFound, hiddenResponse.StatusCode);
+        var initialPublicResponse = await anonymousClient.GetAsync($"/api/posts/{created.PostNumber}");
+        Assert.Equal(HttpStatusCode.OK, initialPublicResponse.StatusCode);
 
         var publishedResponse = await ownerClient.PutAsJsonAsync(
-            $"/api/posts/{draft.PostNumber}",
+            $"/api/posts/{created.PostNumber}",
             new UpdatePostRequest
             {
-                Title = draft.Title,
-                Description = draft.Description,
-                Content = draft.Content,
-                Publish = true,
+                Title = created.Title,
+                Description = created.Description,
+                Content = "Updated public content",
             });
         Assert.Equal(HttpStatusCode.OK, publishedResponse.StatusCode);
 
-        var publicResponse = await anonymousClient.GetAsync($"/api/posts/{draft.PostNumber}");
+        var publicResponse = await anonymousClient.GetAsync($"/api/posts/{created.PostNumber}");
         Assert.Equal(HttpStatusCode.OK, publicResponse.StatusCode);
+        var updated = await publicResponse.Content.ReadFromJsonAsync<PostDetailResponse>();
+        Assert.NotNull(updated);
+        Assert.Equal("Updated public content", updated.Content);
+        Assert.Equal(created.PublishedAtUtc, updated.PublishedAtUtc);
+        var publicPosts = await anonymousClient.GetFromJsonAsync<PostSummaryResponse[]>("/api/posts");
+        Assert.Contains(publicPosts!, post => post.PostNumber == created.PostNumber);
     }
 
     [Fact]

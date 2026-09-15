@@ -19,7 +19,7 @@ GitHub Actions CD까지 같은 구조로 재현할 수 있다.
 - npm workspace 안에 Next.js 16 Frontend와 ASP.NET Core 10 Backend 구성
 - SQLite와 EF Core migration, ASP.NET Core Identity 기반 Owner 인증
 - 최초 한 번만 허용되는 Setup Code 기반 Owner 생성
-- Markdown 글 CRUD, 초안/공개 권한, 카테고리, 검색
+- Markdown 글 CRUD, 즉시 게시와 카테고리 공개 권한, 카테고리, 검색
 - Next.js rewrite를 이용한 동일 출처 API 호출
 - non-root 다단계 Docker 이미지와 Nginx reverse proxy
 - Docker volume에 DB와 Data Protection key 영속화
@@ -64,7 +64,7 @@ GitHub Actions CD까지 같은 구조로 재현할 수 있다.
 ### 현재 제공 기능
 
 - Owner 최초 생성, 로그인, 로그아웃과 IP별 로그인 요청 제한
-- Owner만 글 생성·수정·삭제 및 초안 조회
+- Owner만 글 생성·수정·삭제
 - 방문자는 공개 글과 공개 카테고리만 조회
 - Markdown 및 GFM 렌더링과 편집 미리보기
 - 제목·설명 검색, 카테고리 필터, 예상 읽기 시간
@@ -467,8 +467,8 @@ Copy-LessonFiles @(
 | POST | `/api/auth/login` | O | O | 세션 cookie 발급 |
 | GET | `/api/auth/me` | X | O | 현재 사용자 |
 | POST | `/api/auth/logout` | X | O | 세션 종료 |
-| GET | `/api/posts` | O | O | 방문자는 공개 글, Owner는 초안 포함 |
-| GET | `/api/posts/{number}` | O | O | 초안은 Owner만 조회 |
+| GET | `/api/posts` | O | O | 방문자는 공개·코드 보호 글의 제목과 설명, Owner는 모든 글 |
+| GET | `/api/posts/{number}` | O | O | 비공개·숨긴 카테고리 글은 Owner만 조회, 코드 보호 본문은 해제 후 조회 |
 | POST | `/api/posts` | X | O | 글 생성 |
 | PUT | `/api/posts/{number}` | X | O | 글 수정·게시 전환 |
 | DELETE | `/api/posts/{number}` | X | O | 글 삭제 |
@@ -559,7 +559,7 @@ dotnet test Blog.slnx --configuration Release --no-restore
 - 동시에 요청해도 Owner 한 명만 생성
 - 운영 환경에 개발 계정 설정이 들어가면 시작 거부
 - Owner만 글 작성 가능
-- 초안은 익명 사용자에게 404
+- 공개 글은 게시 직후 익명 사용자도 조회 가능
 - 게시 후 익명 조회 가능
 - 카테고리 연결과 검색/필터 동작
 
@@ -702,7 +702,7 @@ Route map:
 | `/categories/manage` | page | Owner 분류 관리 |
 
 `PostList`는 먼저 카테고리를 받은 뒤 slug를 ID로 해석하고 글 API를 호출한다.
-Owner가 로그인하면 같은 endpoint 응답에 초안과 숨김 카테고리가 포함되므로 인증 상태가
+Owner가 로그인하면 같은 endpoint 응답에 숨김 카테고리의 글과 카테고리가 포함되므로 인증 상태가
 바뀔 때 목록을 다시 불러온다.
 
 `MarkdownContent`는 `react-markdown`과 `remark-gfm`을 사용한다. raw HTML plugin을
@@ -744,9 +744,9 @@ Password: password
 확인 순서:
 
 1. 카테고리 생성
-2. 새 글을 초안으로 저장
-3. 로그아웃하면 초안이 보이지 않는지 확인
-4. 다시 로그인해 공개 게시
+2. 새 글을 게시
+3. 로그아웃해도 게시글이 보이는지 확인
+4. 다시 로그인해 글 수정 후 저장
 5. 카테고리 URL과 검색으로 글 확인
 6. Markdown 표, 코드, 목록, 인용문 확인
 
@@ -1213,7 +1213,7 @@ curl --fail --insecure --resolve crusthack.com:443:127.0.0.1 \
 Cloudflare DNS와 `Full (strict)`을 확인한 뒤 브라우저에서
 `https://crusthack.com/setup`을 열고 Setup Code로 Owner를 만든다.
 
-초안·공개 글 동작을 확인한 뒤 EC2에서 bootstrap을 종료한다.
+즉시 게시와 글 수정 동작을 확인한 뒤 EC2에서 bootstrap을 종료한다.
 
 ```bash
 sudo /usr/local/sbin/finish-blog-bootstrap
@@ -1388,8 +1388,8 @@ sudo docker compose -f /srv/blog/current/compose.production.yaml \
 
 - [ ] 개발 Owner 로그인
 - [ ] 카테고리 생성
-- [ ] Markdown 초안 작성·수정
-- [ ] 익명 사용자에게 초안 404
+- [ ] Markdown 글 게시·수정
+- [ ] 게시 직후 익명 사용자 조회 성공
 - [ ] 공개 게시물과 검색/분류 조회
 - [ ] restart 후 데이터 유지
 - [ ] runtime backup 생성

@@ -13,9 +13,11 @@ namespace Blog.Api.Controllers;
 
 [ApiController]
 [Route("api/posts")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class PostsController(
     BlogDbContext db,
     PostAssetStorage assetStorage,
+    PostAccessService access,
     ILogger<PostsController> logger) : ControllerBase
 {
     [AllowAnonymous]
@@ -29,7 +31,7 @@ public sealed class PostsController(
         var postsQuery = db.Posts.AsNoTracking();
         if (!canManage)
             postsQuery = postsQuery.Where(post =>
-                post.Status == PostStatuses.Published &&
+                (post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected) &&
                 (post.Category == null || post.Category.IsVisible));
 
         if (categoryId.HasValue)
@@ -49,7 +51,7 @@ public sealed class PostsController(
                 post.Description,
                 post.CategoryId,
                 post.Category == null ? null : post.Category.Name,
-                post.Status,
+                post.Visibility,
                 post.UpdatedAtUtc,
                 post.PublishedAtUtc))
             .ToListAsync();
@@ -66,12 +68,32 @@ public sealed class PostsController(
             .Include(candidate => candidate.Category)
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
 
-        if (post is null ||
-            !User.IsInRole(Roles.Owner) &&
-            (post.Status != PostStatuses.Published || post.Category is { IsVisible: false }))
+        if (post is null || !PostAccessService.IsListed(post, HttpContext))
             return NotFound();
+        if (!access.CanRead(post, HttpContext))
+            return StatusCode(StatusCodes.Status403Forbidden, new
+            {
+                RequiresAccessCode = true,
+                post.Title,
+                post.PostNumber,
+            });
 
         return Ok(ToDetail(post));
+    }
+
+    [AllowAnonymous]
+    [HttpPost("{postNumber:long}/unlock")]
+    [EnableRateLimiting("post-unlock")]
+    public async Task<IActionResult> Unlock(long postNumber, UnlockPostRequest request)
+    {
+        var post = await db.Posts.AsNoTracking().Include(item => item.Category)
+            .SingleOrDefaultAsync(item => item.PostNumber == postNumber);
+        if (post is null || !PostAccessService.IsListed(post, HttpContext)) return NotFound();
+        if (User.IsInRole(Roles.Owner) || post.Visibility == PostVisibility.Public) return NoContent();
+        if (post.Visibility != PostVisibility.CodeProtected || !access.VerifyCode(post, request.Code))
+            return BadRequest(new ProblemDetails { Title = "접근 코드가 올바르지 않습니다." });
+        access.Grant(post, HttpContext);
+        return NoContent();
     }
 
     [Authorize(Roles = Roles.Owner)]
@@ -96,15 +118,16 @@ public sealed class PostsController(
             Title = request.Title.Trim(),
             Description = Normalize(request.Description),
             Content = request.Content,
-            Status = request.Publish ? PostStatuses.Published : PostStatuses.Draft,
             CategoryId = request.CategoryId,
             Category = category,
             OwnerId = ownerId,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
-            PublishedAtUtc = request.Publish ? now : null,
+            PublishedAtUtc = now,
         };
 
+        var accessError = access.Configure(post, request.Visibility, request.AccessCode);
+        if (accessError is not null) return BadRequest(new ProblemDetails { Title = accessError });
         db.Posts.Add(post);
         await db.SaveChangesAsync();
         return Created($"/api/posts/{post.PostNumber}", ToDetail(post));
@@ -120,6 +143,8 @@ public sealed class PostsController(
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
         if (post is null) return NotFound();
 
+        var accessError = access.Configure(post, request.Visibility, request.AccessCode);
+        if (accessError is not null) return BadRequest(new ProblemDetails { Title = accessError });
         post.Title = request.Title.Trim();
         post.Description = Normalize(request.Description);
         post.Content = request.Content;
@@ -132,11 +157,8 @@ public sealed class PostsController(
         }
         post.CategoryId = request.CategoryId;
         post.Category = category;
-        post.Status = request.Publish ? PostStatuses.Published : PostStatuses.Draft;
         post.UpdatedAtUtc = DateTime.UtcNow;
-        post.PublishedAtUtc = request.Publish
-            ? post.PublishedAtUtc ?? post.UpdatedAtUtc
-            : null;
+        post.PublishedAtUtc ??= post.UpdatedAtUtc;
 
         await db.SaveChangesAsync();
         return Ok(ToDetail(post));
@@ -196,8 +218,8 @@ public sealed class PostsController(
         post.Description,
         post.CategoryId,
         post.Category?.Name,
+        post.Visibility,
         post.Content,
-        post.Status,
         post.CreatedAtUtc,
         post.UpdatedAtUtc,
         post.PublishedAtUtc);
@@ -209,7 +231,7 @@ public sealed record PostSummaryResponse(
     string? Description,
     Guid? CategoryId,
     string? CategoryName,
-    string Status,
+    string Visibility,
     DateTime UpdatedAtUtc,
     DateTime? PublishedAtUtc);
 
@@ -219,8 +241,8 @@ public sealed record PostDetailResponse(
     string? Description,
     Guid? CategoryId,
     string? CategoryName,
+    string Visibility,
     string Content,
-    string Status,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     DateTime? PublishedAtUtc);
@@ -238,7 +260,17 @@ public class CreatePostRequest
 
     public Guid? CategoryId { get; init; }
 
-    public bool Publish { get; init; }
+    [Required, RegularExpression("^(Public|Private|CodeProtected)$")]
+    public string Visibility { get; init; } = PostVisibility.Public;
+
+    [StringLength(128, MinimumLength = 4)]
+    public string? AccessCode { get; init; }
 }
 
 public sealed class UpdatePostRequest : CreatePostRequest;
+
+public sealed class UnlockPostRequest
+{
+    [Required, StringLength(128, MinimumLength = 4)]
+    public required string Code { get; init; }
+}

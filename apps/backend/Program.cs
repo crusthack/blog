@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Blog.Api.Auth;
 using Blog.Api.Data;
 using Blog.Api.Models;
 using Blog.Api.Setup;
@@ -121,10 +122,20 @@ builder.Services.ConfigureApplicationCookie(options =>
 builder.Services.AddScoped<BootstrapTokenProvider>();
 builder.Services.AddScoped<OwnerSetupService>();
 builder.Services.AddSingleton<PostAssetStorage>();
+builder.Services.AddScoped<PostAccessService>();
 
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("post-unlock", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(15),
+                QueueLimit = 0,
+            }));
     options.AddPolicy("owner-setup", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",

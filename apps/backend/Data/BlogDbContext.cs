@@ -41,7 +41,8 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
             entity.HasIndex(post => post.PostNumber).IsUnique();
             entity.Property(post => post.Title).HasMaxLength(240);
             entity.Property(post => post.Description).HasMaxLength(500);
-            entity.Property(post => post.Status).HasMaxLength(16);
+            entity.Property(post => post.Visibility).HasMaxLength(24).HasDefaultValue(PostVisibility.Public);
+            entity.Property(post => post.AccessCodeHash).HasMaxLength(512);
             entity.HasOne(post => post.Category)
                 .WithMany(category => category.Posts)
                 .HasForeignKey(post => post.CategoryId)

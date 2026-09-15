@@ -7,7 +7,9 @@ public sealed class Post
     public required string Title { get; set; }
     public string? Description { get; set; }
     public string Content { get; set; } = string.Empty;
-    public string Status { get; set; } = PostStatuses.Draft;
+    public string Visibility { get; set; } = PostVisibility.Public;
+    public string? AccessCodeHash { get; set; }
+    public Guid AccessCodeVersion { get; set; } = Guid.NewGuid();
     public Guid? CategoryId { get; set; }
     public Category? Category { get; set; }
     public Guid OwnerId { get; set; }
@@ -18,8 +20,9 @@ public sealed class Post
     public ICollection<PostAsset> Assets { get; set; } = [];
 }
 
-public static class PostStatuses
+public static class PostVisibility
 {
-    public const string Draft = "Draft";
-    public const string Published = "Published";
+    public const string Public = "Public";
+    public const string Private = "Private";
+    public const string CodeProtected = "CodeProtected";
 }

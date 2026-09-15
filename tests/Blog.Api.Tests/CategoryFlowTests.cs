@@ -52,7 +52,6 @@ public sealed class CategoryFlowTests
                 Description = "A small state machine",
                 Content = "# DFA",
                 CategoryId = category.Id,
-                Publish = true,
             });
         Assert.Equal(HttpStatusCode.Created, postResponse.StatusCode);
 

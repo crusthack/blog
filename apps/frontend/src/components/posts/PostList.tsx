@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { type Category, type PostSummary, readProblem } from "@/lib/contracts";
+import { type Category, type PostSummary, readProblem, visibilityLabels } from "@/lib/contracts";
 
 export function PostList({ categorySlug }: { categorySlug?: string }) {
   const { user, isLoading: isAuthLoading } = useAuth();
@@ -206,13 +206,11 @@ export function PostList({ categorySlug }: { categorySlug?: string }) {
               >
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 text-sm">
                   <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold">{visibilityLabels[post.visibility]}</span>
                     {post.categoryName ? (
                       <span className="rounded-full bg-emerald-50 px-3 py-1 font-bold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                         {post.categoryName}
                       </span>
-                    ) : null}
-                    {post.status === "Draft" ? (
-                      <span className="rounded-full bg-amber-50 px-3 py-1 font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">초안</span>
                     ) : null}
                   </div>
                   <time className="text-gray-500" dateTime={post.updatedAtUtc}>{formatDate(post.updatedAtUtc)}</time>

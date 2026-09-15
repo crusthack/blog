@@ -131,6 +131,13 @@ namespace Blog.Api.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AccessCodeHash")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AccessCodeVersion")
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("TEXT");
 
@@ -154,11 +161,6 @@ namespace Blog.Api.Data.Migrations
                     b.Property<DateTime?>("PublishedAtUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(240)
@@ -166,6 +168,13 @@ namespace Blog.Api.Data.Migrations
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Public");
 
                     b.HasKey("Id");
 

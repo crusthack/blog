@@ -13,9 +13,11 @@ namespace Blog.Api.Controllers;
 
 [ApiController]
 [Route("api/posts/{postNumber:long}/assets")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class PostAssetsController(
     BlogDbContext db,
     PostAssetStorage storage,
+    PostAccessService access,
     ILogger<PostAssetsController> logger) : ControllerBase
 {
     private const long MaxImageFileSize = 10 * 1024 * 1024;
@@ -144,10 +146,7 @@ public sealed class PostAssetsController(
                 cancellationToken);
         if (asset is null) return NotFound();
 
-        var canManage = User.IsInRole(Roles.Owner);
-        var isPublic = asset.Post.Status == PostStatuses.Published &&
-            asset.Post.Category is not { IsVisible: false };
-        if (!canManage && !isPublic)
+        if (!access.CanRead(asset.Post, HttpContext))
         {
             return NotFound();
         }
@@ -156,8 +155,7 @@ public sealed class PostAssetsController(
         if (!System.IO.File.Exists(path)) return NotFound();
 
         Response.Headers.XContentTypeOptions = "nosniff";
-        // An Owner can later turn a published post back into a draft or hide its
-        // category, so an intermediary must not retain a formerly-public asset.
+        // A category can later be hidden, so intermediaries must not retain its assets.
         Response.Headers.CacheControl = "private, no-store";
         Response.Headers.Vary = "Cookie";
         if (asset.ContentType == "application/pdf")

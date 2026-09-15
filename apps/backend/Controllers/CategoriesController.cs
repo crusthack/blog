@@ -12,6 +12,7 @@ namespace Blog.Api.Controllers;
 
 [ApiController]
 [Route("api/categories")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed partial class CategoriesController(BlogDbContext db) : ControllerBase
 {
     [AllowAnonymous]
@@ -34,7 +35,8 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
                 category.Description,
                 category.SortOrder,
                 category.IsVisible,
-                category.Posts.Count(post => canManage || post.Status == PostStatuses.Published)))
+                category.Posts.Count(post => canManage ||
+                    post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected)))
             .ToListAsync();
 
         return Ok(categories);
