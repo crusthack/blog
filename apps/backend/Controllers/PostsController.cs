@@ -51,6 +51,7 @@ public sealed class PostsController(
                 post.Description,
                 post.CategoryId,
                 post.Category == null ? null : post.Category.Name,
+                post.Category == null ? null : post.Category.Slug,
                 post.Visibility,
                 post.UpdatedAtUtc,
                 post.PublishedAtUtc))
@@ -76,6 +77,7 @@ public sealed class PostsController(
                 RequiresAccessCode = true,
                 post.Title,
                 post.PostNumber,
+                CategorySlug = post.Category?.Slug,
             });
 
         return Ok(ToDetail(post));
@@ -218,6 +220,7 @@ public sealed class PostsController(
         post.Description,
         post.CategoryId,
         post.Category?.Name,
+        post.Category?.Slug,
         post.Visibility,
         post.Content,
         post.CreatedAtUtc,
@@ -231,6 +234,7 @@ public sealed record PostSummaryResponse(
     string? Description,
     Guid? CategoryId,
     string? CategoryName,
+    string? CategorySlug,
     string Visibility,
     DateTime UpdatedAtUtc,
     DateTime? PublishedAtUtc);
@@ -241,6 +245,7 @@ public sealed record PostDetailResponse(
     string? Description,
     Guid? CategoryId,
     string? CategoryName,
+    string? CategorySlug,
     string Visibility,
     string Content,
     DateTime CreatedAtUtc,

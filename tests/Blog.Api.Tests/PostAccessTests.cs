@@ -41,6 +41,7 @@ public sealed class PostAccessTests
         Assert.True(locked.Headers.CacheControl!.NoStore);
         var lockedJson = await locked.Content.ReadFromJsonAsync<JsonElement>();
         Assert.True(lockedJson.GetProperty("requiresAccessCode").GetBoolean());
+        Assert.Equal(category.Slug, lockedJson.GetProperty("categorySlug").GetString());
         Assert.False(lockedJson.TryGetProperty("content", out _));
         var ownerResponse = await owner.GetAsync(Route(protectedPost));
         var ownerJson = await ownerResponse.Content.ReadFromJsonAsync<JsonElement>();

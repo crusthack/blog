@@ -60,8 +60,32 @@ public sealed class CategoryFlowTests
         var post = Assert.Single(filtered!);
         Assert.Equal(category.Id, post.CategoryId);
         Assert.Equal(category.Name, post.CategoryName);
+        Assert.Equal(category.Slug, post.CategorySlug);
+
+        var renamed = await owner.PutAsJsonAsync($"/api/categories/{category.Id}", new SaveCategoryRequest
+        {
+            Name = category.Name,
+            Slug = "renamed-category",
+        });
+        Assert.Equal(HttpStatusCode.OK, renamed.StatusCode);
+        var existing = await visitor.GetFromJsonAsync<PostDetailResponse>($"/api/posts/{post.PostNumber}");
+        Assert.NotNull(existing);
+        Assert.Equal("renamed-category", existing.CategorySlug);
+        Assert.Equal(post.PostNumber, existing.PostNumber);
+        var renamedList = await visitor.GetFromJsonAsync<PostSummaryResponse[]>("/api/posts");
+        Assert.Equal("renamed-category", Assert.Single(renamedList!).CategorySlug);
 
         var publicCategories = await visitor.GetFromJsonAsync<CategoryResponse[]>("/api/categories");
         Assert.Equal(1, Assert.Single(publicCategories!).PostCount);
+
+        var moved = await owner.PutAsJsonAsync($"/api/posts/{post.PostNumber}", new UpdatePostRequest
+        {
+            Title = existing.Title,
+            Content = existing.Content,
+            CategoryId = null,
+        });
+        Assert.Equal(HttpStatusCode.OK, moved.StatusCode);
+        var uncategorized = await visitor.GetFromJsonAsync<PostDetailResponse>($"/api/posts/{post.PostNumber}");
+        Assert.Null(uncategorized!.CategorySlug);
     }
 }

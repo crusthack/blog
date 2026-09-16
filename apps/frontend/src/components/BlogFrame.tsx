@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { readProblem, type Category, type PostSummary, visibilityLabels } from "@/lib/contracts";
 import { usefulSiteLinks } from "@/lib/siteLinks";
+import { postPath } from "@/lib/postPaths";
 
-export function BlogFrame({ children }: { children: ReactNode }) {
+export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rightSidebar?: ReactNode }) {
   const { user, isLoading: isAuthLoading } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [posts, setPosts] = useState<PostSummary[]>([]);
@@ -75,7 +76,7 @@ export function BlogFrame({ children }: { children: ReactNode }) {
   }, [categories, posts]);
 
   return (
-    <main className="legacy-blog-frame">
+    <main className={`legacy-blog-frame${rightSidebar !== undefined ? " legacy-blog-frame-post" : ""}`}>
       <div className="legacy-blog-main">{children}</div>
 
       <aside className="legacy-blog-sidebar legacy-blog-sidebar-left" aria-label="블로그 탐색">
@@ -108,7 +109,8 @@ export function BlogFrame({ children }: { children: ReactNode }) {
         {error ? <p role="alert">{error}</p> : null}
       </aside>
 
-      <aside className="legacy-blog-sidebar legacy-blog-sidebar-right" aria-label="프로젝트와 참고 링크">
+      <aside className="legacy-blog-sidebar legacy-blog-sidebar-right" aria-label={rightSidebar !== undefined ? "포스트 탐색" : "프로젝트와 참고 링크"}>
+        {rightSidebar !== undefined ? rightSidebar : <>
         <section>
           <h2>최근 프로젝트</h2>
           <PostLinks posts={projectPosts} emptyMessage="프로젝트 글이 없습니다." isLoading={isLoading} />
@@ -131,6 +133,7 @@ export function BlogFrame({ children }: { children: ReactNode }) {
             ))}
           </ul>
         </section>
+        </>}
       </aside>
     </main>
   );
@@ -152,7 +155,7 @@ function PostLinks({
     <ul>
       {posts.map((post) => (
         <li key={post.postNumber}>
-          <Link href={`/posts/${post.postNumber}`} title={post.title}>
+          <Link href={postPath(post)} title={post.title}>
             {post.title}
             {post.visibility !== "Public" ? ` · ${visibilityLabels[post.visibility]}` : ""}
           </Link>

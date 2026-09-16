@@ -6,6 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, type PostSummary, readProblem, visibilityLabels } from "@/lib/contracts";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
+import { postPath } from "@/lib/postPaths";
 
 type Props = { categorySlug?: string; manage?: boolean };
 const pageSize = 20;
@@ -157,7 +158,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
                 {visiblePosts.map((post) => <tr key={post.postNumber}>
                   <td className="board-number">{post.postNumber}</td>
                   <td className="board-category"><span title={post.categoryName ?? "미분류"}>{post.categoryName ?? "미분류"}</span></td>
-                  <td className="board-title"><Link href={`/posts/${post.postNumber}`} title={post.title}>{post.title}</Link></td>
+                  <td className="board-title"><Link href={postPath(post)} title={post.title}>{post.title}</Link></td>
                   <td className="board-visibility"><span data-visibility={post.visibility}>{visibilityLabels[post.visibility]}</span></td>
                   <td className="board-date"><time dateTime={manage ? post.updatedAtUtc : post.publishedAtUtc ?? post.updatedAtUtc}>
                     {formatDate(manage ? post.updatedAtUtc : post.publishedAtUtc ?? post.updatedAtUtc)}

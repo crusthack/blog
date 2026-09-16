@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { PostAssetManager } from "@/components/posts/PostAssetManager";
+import { postPath } from "@/lib/postPaths";
 import { type Category, type PostDetail, type PostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
@@ -96,7 +97,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
       });
       if (!response.ok) throw new Error(await readProblem(response, "글을 저장하지 못했습니다."));
       const saved = (await response.json()) as PostDetail;
-      router.push(`/posts/${saved.postNumber}`);
+      router.push(postPath(saved));
       router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "글을 저장하지 못했습니다.");

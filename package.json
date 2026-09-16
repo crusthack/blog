@@ -12,6 +12,7 @@
     "lint:frontend": "npm run lint --workspace=frontend",
     "start:frontend": "npm run start --workspace=frontend",
     "test:backend": "dotnet test Blog.slnx",
+    "test:frontend": "node --experimental-strip-types --test tests/frontend/*.test.mjs",
     "deploy:build": "docker compose -f compose.production.yaml build",
     "deploy:up": "docker compose -f compose.production.yaml up -d",
     "deploy:up:bootstrap": "docker compose -f compose.production.yaml -f compose.bootstrap.yaml up -d",

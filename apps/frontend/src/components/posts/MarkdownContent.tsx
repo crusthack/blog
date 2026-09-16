@@ -1,7 +1,13 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CodeBlock } from "@/components/posts/CodeBlock";
+import { remarkHeadingIds } from "@/lib/markdownHeadings";
 
 const markdownComponents: Components = {
+  pre({ node, children, ...props }) {
+    void node;
+    return <CodeBlock {...props}>{children}</CodeBlock>;
+  },
   img({ node, src, alt, ...props }) {
     void node;
     const safeSource = safeMediaUrl(src);
@@ -58,7 +64,7 @@ const markdownComponents: Components = {
 export function MarkdownContent({ source }: { source: string }) {
   return (
     <div className="content-markdown markdown-body">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>{source}</ReactMarkdown>
+      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm, remarkHeadingIds]}>{source}</ReactMarkdown>
     </div>
   );
 }

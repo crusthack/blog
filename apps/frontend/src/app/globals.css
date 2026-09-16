@@ -1067,6 +1067,53 @@ summary {
   word-wrap: normal;
 }
 
+.markdown-code-block {
+  min-width: 0;
+  margin: 0 0 1rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 0.25rem;
+  overflow: hidden;
+}
+
+.markdown-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.35rem 0.8rem;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.markdown-code-language {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+  min-height: 2rem;
+  padding: 0.25rem 0.4rem;
+  font-weight: 700;
+}
+
+.markdown-code-copy:hover { color: var(--accent-strong); }
+.markdown-code-copy:disabled { cursor: wait; opacity: 0.6; }
+.markdown-body .markdown-code-block > pre { margin: 0; border: 0; border-radius: 0; }
+.markdown-body .markdown-code-error { margin: 0; padding: 0.5rem 0.8rem; color: var(--danger); font-size: 0.8rem; }
+
+@media print {
+  .markdown-code-copy, .markdown-code-error { display: none; }
+}
+
 .markdown-body table {
   display: block;
   width: max-content;
@@ -1483,6 +1530,29 @@ summary {
     min-height: 0;
     padding: 1rem;
   }
+}
+
+.markdown-body :is(h1, h2, h3, h4, h5, h6) { scroll-margin-top: 7rem; }
+.post-toc { min-width: 0; }
+.post-toc > summary { cursor: pointer; font-size: 1.05rem; font-weight: 750; }
+.post-toc nav { max-height: calc(100vh - 10rem); overflow-y: auto; margin-top: 1rem; scrollbar-width: thin; }
+.post-toc ol { margin: 0; padding: 0; list-style: none; }
+.legacy-blog-sidebar .post-toc li + li { margin-top: 0.25rem; }
+.legacy-blog-sidebar .post-toc a { display: block; padding: 0.4rem 0.6rem; border-left: 2px solid transparent; color: var(--muted); font-size: 0.85rem; }
+.legacy-blog-sidebar .post-toc a[aria-current="location"] { color: var(--accent-strong); border-left-color: var(--accent-strong); background: var(--accent-soft); font-weight: 700; }
+.post-toc > p { margin-top: 1rem; }
+
+@media (max-width: 72rem) {
+  .legacy-blog-frame-post { grid-template-areas: "right right" "main main" "left left"; }
+  .legacy-blog-frame-post .legacy-blog-sidebar-right { display: block; padding-top: 0; border-top: 0; }
+  .post-toc nav { max-height: 14rem; }
+}
+@media (max-width: 42rem) {
+  .legacy-blog-frame-post { grid-template-areas: "right" "main" "left"; }
+}
+@media print {
+  .legacy-blog-frame-post { display: block; }
+  .legacy-blog-frame-post > aside { display: none; }
 }
 
 /* Explicit and system dark post rendering mirrors the source frontend. */

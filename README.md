@@ -165,10 +165,17 @@ docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d
 
 빈 폴더의 기본 프로젝트 생성부터 Windows 개발, Docker 검증, EC2 첫 배포와 운영 명령까지 따라 하는 교안은 [docs/PROJECT_SETUP_AND_DEPLOYMENT_GUIDE.md](docs/PROJECT_SETUP_AND_DEPLOYMENT_GUIDE.md)를 참고합니다.
 
+## 포스트 주소와 목차
+
+- 포스트 주소는 `/posts/{카테고리 slug}/{글번호}`이며, 미분류 글은 `/posts/uncategorized/{글번호}`를 사용합니다.
+- 기존 글도 현재 카테고리에서 주소를 계산하므로 데이터 마이그레이션이 필요 없습니다. `/posts/{글번호}`나 이전 카테고리 주소로 접속하면 글 조회 후 브라우저 주소를 현재 경로로 교체합니다. 쿼리와 본문 위치(`#...`)는 유지합니다.
+- 본문 제목으로 오른쪽 목차를 자동 생성하고 현재 읽는 구간을 표시합니다. 작은 화면에서는 본문 위에 접을 수 있는 목차를 표시합니다. 보호된 글은 접근 코드를 확인한 후에만 목차가 나타납니다.
+
 ## 검증
 
 ```bash
 npm run lint:frontend
+npm run test:frontend
 API_SERVER_URL=http://localhost:5268 npm run build:frontend
 npm run test:backend
 docker compose -f compose.production.yaml config

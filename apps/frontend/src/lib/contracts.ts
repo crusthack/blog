@@ -39,6 +39,7 @@ export type PostSummary = {
   description: string | null;
   categoryId: string | null;
   categoryName: string | null;
+  categorySlug: string | null;
   visibility: PostVisibility;
   updatedAtUtc: string;
   publishedAtUtc: string | null;

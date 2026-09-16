@@ -1,11 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BlogFrame } from "@/components/BlogFrame";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type PostDetail, readProblem, visibilityLabels } from "@/lib/contracts";
+import { postPath } from "@/lib/postPaths";
+import { getMarkdownHeadings } from "@/lib/markdownHeadings";
+import { PostToc } from "@/components/posts/PostToc";
 
 export function PostView({ postNumber }: { postNumber: string }) {
   const { user, isLoading } = useAuth();
@@ -14,6 +18,7 @@ export function PostView({ postNumber }: { postNumber: string }) {
 }
 
 function PostContent({ postNumber }: { postNumber: string }) {
+  const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [post, setPost] = useState<PostDetail | null>(null);
   const [error, setError] = useState("");
@@ -22,10 +27,18 @@ function PostContent({ postNumber }: { postNumber: string }) {
   const [unlockError, setUnlockError] = useState("");
   const [isUnlocking, setIsUnlocking] = useState(false);
   const [reload, setReload] = useState(0);
+  const headings = useMemo(() => post ? getMarkdownHeadings(post.content) : [], [post]);
 
   useEffect(() => {
     if (isAuthLoading) return;
     const controller = new AbortController();
+    function normalizePostPath(data: { postNumber: number; categorySlug: string | null }) {
+      if (controller.signal.aborted) return;
+      const path = postPath(data);
+      if (window.location.pathname !== path) {
+        router.replace(`${path}${window.location.search}${window.location.hash}`, { scroll: false });
+      }
+    }
     void fetch(`/api/posts/${postNumber}`, {
       cache: "no-store",
       credentials: "include",
@@ -35,14 +48,18 @@ function PostContent({ postNumber }: { postNumber: string }) {
         if (response.status === 403) {
           const locked = await response.json();
           if (locked.requiresAccessCode) {
+            normalizePostPath(locked);
             setLockedTitle(locked.title);
             return null;
           }
           throw new Error("이 글을 열람할 수 없습니다.");
         }
         if (!response.ok) throw new Error(await readProblem(response, "글을 찾지 못했습니다."));
+        const detail = (await response.json()) as PostDetail;
+        if (controller.signal.aborted) return null;
+        normalizePostPath(detail);
         setLockedTitle(null);
-        return (await response.json()) as PostDetail;
+        return detail;
       })
       .then(setPost)
       .catch((reason: unknown) => {
@@ -50,7 +67,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
         setError(reason instanceof Error ? reason.message : "글을 불러오지 못했습니다.");
       });
     return () => controller.abort();
-  }, [isAuthLoading, postNumber, reload]);
+  }, [isAuthLoading, postNumber, reload, router]);
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,14 +92,14 @@ function PostContent({ postNumber }: { postNumber: string }) {
 
   if (error) {
     return (
-      <BlogFrame>
+      <BlogFrame rightSidebar={null}>
         <p data-ui="notice" className="border-red-500 bg-red-50 p-5 text-red-700 dark:bg-red-950/30 dark:text-red-300">{error}</p>
       </BlogFrame>
     );
   }
   if (lockedTitle !== null) {
     return (
-      <BlogFrame>
+      <BlogFrame rightSidebar={<p>접근 코드를 입력하면 본문 목차가 표시됩니다.</p>}>
         <section className="post-view p-8 md:p-12">
           <h1 className="text-3xl font-bold">{lockedTitle}</h1>
           <p className="mt-4">접근 코드를 입력하면 본문과 첨부 파일을 12시간 동안 볼 수 있습니다.</p>
@@ -104,7 +121,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
   }
   if (!post) {
     return (
-      <BlogFrame>
+      <BlogFrame rightSidebar={null}>
         <p className="min-h-[50vh] text-gray-500">글을 불러오고 있습니다.</p>
       </BlogFrame>
     );
@@ -113,7 +130,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
   const readingMinutes = Math.max(1, Math.ceil(post.content.trim().split(/\s+/).length / 250));
 
   return (
-    <BlogFrame>
+    <BlogFrame rightSidebar={<PostToc headings={headings} />}>
       <article
         className="post-view min-h-screen w-full rounded-2xl border border-gray-200 p-8 shadow-sm dark:border-gray-700 md:p-12"
         data-view="post"
@@ -121,10 +138,10 @@ function PostContent({ postNumber }: { postNumber: string }) {
         <header className="mb-8 border-b border-gray-200 pb-7 dark:border-gray-700">
           <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
             <span>{visibilityLabels[post.visibility]}</span>
-            {post.categoryName ? (
-              <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+            {post.categoryName && post.categorySlug ? (
+              <Link href={`/categories/${encodeURIComponent(post.categorySlug)}`} className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                 {post.categoryName}
-              </span>
+              </Link>
             ) : null}
             <span className="text-gray-500">약 {readingMinutes}분</span>
             {user?.isOwner ? (
