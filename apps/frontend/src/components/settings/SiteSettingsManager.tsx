@@ -9,7 +9,9 @@ import { externalLinksUpdatedEvent } from "@/lib/uiEvents";
 
 const maxExternalLinks = 20;
 
-export function SiteSettingsManager() {
+export function SiteSettingsManager({ embedded = false }: { embedded?: boolean } = {}) {
+  const Container = embedded ? "section" : "main";
+  const Heading = embedded ? "h2" : "h1";
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [links, setLinks] = useState<ExternalLink[]>([]);
@@ -139,19 +141,19 @@ export function SiteSettingsManager() {
 
   if (isAuthLoading || isLoading) {
     return (
-      <main className="mx-auto min-h-[70vh] max-w-6xl p-10 text-gray-500 dark:text-gray-400">
+      <Container className="mx-auto min-h-[70vh] max-w-6xl p-10 text-gray-500 dark:text-gray-400">
         사이트 설정을 불러오고 있습니다.
-      </main>
+      </Container>
     );
   }
   if (!user?.isOwner) return null;
 
   return (
-    <main data-ui-page="admin" className="mx-auto min-h-[75vh] w-full max-w-6xl px-4 py-12 sm:px-6">
+    <Container data-ui-page="admin" className="mx-auto min-h-[75vh] w-full max-w-6xl px-4 py-12 sm:px-6">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-black tracking-[0.2em] text-emerald-600">SITE SETTINGS</p>
-          <h1 className="mt-2 text-4xl font-black">외부 사이트 관리</h1>
+          <Heading className="mt-2 text-4xl font-black">외부 사이트 관리</Heading>
           <p className="mt-3 max-w-2xl leading-7 text-gray-600 dark:text-gray-300">
             상단 외부 사이트 드롭다운에 표시할 링크와 순서를 관리합니다.
           </p>
@@ -281,7 +283,7 @@ export function SiteSettingsManager() {
           </button>
         </div>
       </section>
-    </main>
+    </Container>
   );
 }
 

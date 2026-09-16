@@ -49,6 +49,7 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
             entity.HasIndex(post => post.PostNumber).IsUnique();
             entity.Property(post => post.Revision).IsConcurrencyToken().HasDefaultValue(1L);
             entity.HasIndex(post => new { post.DeletedAtUtc, post.CategoryId, post.PostNumber });
+            entity.HasIndex(post => new { post.DeletedAtUtc, post.Priority, post.PostNumber });
             entity.Property(post => post.Title).HasMaxLength(240);
             entity.Property(post => post.Description).HasMaxLength(500);
             entity.Property(post => post.Visibility).HasMaxLength(24).HasDefaultValue(PostVisibility.Public);

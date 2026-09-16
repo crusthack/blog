@@ -11,7 +11,9 @@ type HealthResponse = {
   checkedAtUtc?: string;
 };
 
-export function HealthDashboard() {
+export function HealthDashboard({ embedded = false }: { embedded?: boolean } = {}) {
+  const Container = embedded ? "section" : "main";
+  const Heading = embedded ? "h2" : "h1";
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [latency, setLatency] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -47,7 +49,7 @@ export function HealthDashboard() {
   const isHealthy = health?.status === "Healthy";
 
   return (
-    <main data-ui-page="operational" className="mx-auto min-h-[75vh] w-full max-w-[1100px] px-4 py-12 sm:px-6">
+    <Container data-ui-page="operational" className="mx-auto min-h-[75vh] w-full max-w-[1100px] px-4 py-12 sm:px-6">
       <section data-ui="panel" className="overflow-hidden bg-white dark:bg-[#252525]">
         <header className={`border-b px-6 py-9 sm:px-10 ${
           isHealthy
@@ -57,7 +59,7 @@ export function HealthDashboard() {
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div>
               <p className="text-sm font-black tracking-[0.2em] text-gray-500">SYSTEM HEALTH</p>
-              <h1 className="mt-2 text-4xl font-black">서비스 상태</h1>
+              <Heading className="mt-2 text-4xl font-black">서비스 상태</Heading>
               <p className="mt-3 text-gray-600 dark:text-gray-300">
                 블로그 API와 SQLite 연결을 30초마다 확인합니다.
               </p>
@@ -114,7 +116,7 @@ export function HealthDashboard() {
           </button>
         </footer>
       </section>
-    </main>
+    </Container>
   );
 }
 

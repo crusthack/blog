@@ -38,6 +38,81 @@ public sealed class CommunityFlowTests
     private static string Root(PostDetailResponse post) => $"/api/posts/{post.PostNumber}/community";
 
     [Fact]
+    public async Task Directory_sorts_by_actual_dates_and_supports_both_directions()
+    {
+        using var factory = new SetupApiFactory(); using var owner = await Owner(factory); using var visitor = Client(factory);
+        var first = await Post(owner, title: "Alpha"); var second = await Post(owner, title: "Beta"); var third = await Post(owner, title: "Gamma");
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+        var day = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        await db.Posts.Where(p => p.PostNumber == first.PostNumber).ExecuteUpdateAsync(set => set
+            .SetProperty(p => p.CreatedAtUtc, day.AddDays(2)).SetProperty(p => p.UpdatedAtUtc, day.AddDays(3)).SetProperty(p => p.Priority, 10));
+        await db.Posts.Where(p => p.PostNumber == second.PostNumber).ExecuteUpdateAsync(set => set
+            .SetProperty(p => p.CreatedAtUtc, day).SetProperty(p => p.UpdatedAtUtc, day.AddDays(5)).SetProperty(p => p.Priority, 20));
+        await db.Posts.Where(p => p.PostNumber == third.PostNumber).ExecuteUpdateAsync(set => set
+            .SetProperty(p => p.CreatedAtUtc, day.AddDays(1)).SetProperty(p => p.UpdatedAtUtc, day.AddDays(4)).SetProperty(p => p.Priority, 10));
+        async Task<long[]> Numbers(string query)
+        {
+            var data = await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory" + query);
+            return data.GetProperty("items").EnumerateArray().Select(item => item.GetProperty("postNumber").GetInt64()).ToArray();
+        }
+        Assert.Equal(new[] { second.PostNumber, first.PostNumber, third.PostNumber }, await Numbers(""));
+        Assert.Equal(new[] { first.PostNumber, third.PostNumber, second.PostNumber }, await Numbers("?sort=priority&direction=asc"));
+        Assert.Equal(new[] { first.PostNumber, third.PostNumber, second.PostNumber }, await Numbers("?sort=created&direction=desc"));
+        Assert.Equal(new[] { second.PostNumber, third.PostNumber, first.PostNumber }, await Numbers("?sort=created&direction=asc"));
+        Assert.Equal(new[] { second.PostNumber, third.PostNumber, first.PostNumber }, await Numbers("?sort=updated&direction=desc"));
+        Assert.Equal(new[] { first.PostNumber, third.PostNumber, second.PostNumber }, await Numbers("?sort=updated&direction=asc"));
+        Assert.Equal(new[] { first.PostNumber, second.PostNumber, third.PostNumber }, await Numbers("?sort=title&direction=asc"));
+        Assert.Equal(new[] { third.PostNumber, second.PostNumber, first.PostNumber }, await Numbers("?sort=title&direction=desc"));
+        Assert.Equal(await Numbers("?sort=created&direction=desc"), await Numbers("?sort=newest"));
+        Assert.Equal(await Numbers("?sort=created&direction=asc"), await Numbers("?sort=oldest"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await visitor.GetAsync("/api/posts/directory?direction=invalid")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Post_priority_is_owner_only_validated_and_conflict_safe()
+    {
+        using var factory = new SetupApiFactory(); using var owner = await Owner(factory);
+        using var member = await Member(factory, owner); using var visitor = Client(factory);
+        var post = await Post(member);
+        var path = $"/api/posts/{post.PostNumber}/priority";
+        var request = new { priority = 100, expectedRevision = post.Revision };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PutAsJsonAsync(path, request)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync(path, request)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync(path, new { priority = -1, expectedRevision = post.Revision })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync(path, new { priority = 10001, expectedRevision = post.Revision })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync(path, new { priority = 100 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync(path, request)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await owner.PutAsJsonAsync(path, request)).StatusCode);
+        var after = await owner.GetFromJsonAsync<PostDetailResponse>($"/api/posts/{post.PostNumber}");
+        Assert.Equal(post.Revision + 1, after!.Revision);
+        Assert.Equal(post.UpdatedAtUtc, after.UpdatedAtUtc);
+        Assert.Equal(post.Content, after.Content);
+        await owner.DeleteAsync($"/api/posts/{post.PostNumber}");
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.PutAsJsonAsync(path, new { priority = 10, expectedRevision = after.Revision + 1 })).StatusCode);
+    }
+
+    [Fact]
+    public async Task Admin_overview_is_owner_only_and_counts_active_and_deleted_content_separately()
+    {
+        using var factory = new SetupApiFactory(); using var owner = await Owner(factory); using var member = await Member(factory, owner); using var visitor = Client(factory);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.GetAsync("/api/admin/overview")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.GetAsync("/api/admin/overview")).StatusCode);
+        var active = await Post(owner); var trashed = await Post(member);
+        await owner.DeleteAsync($"/api/posts/{trashed.PostNumber}");
+        await member.PostAsJsonAsync(Root(active) + "/comments", new { content = "Overview comment" });
+        await member.PostAsJsonAsync(Root(active) + "/reports", new { reason = "Review for overview" });
+        var response = await owner.GetAsync("/api/admin/overview");
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        var data = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, data.GetProperty("posts").GetInt32()); Assert.Equal(1, data.GetProperty("trash").GetInt32());
+        Assert.Equal(2, data.GetProperty("members").GetInt32()); Assert.Equal(1, data.GetProperty("comments").GetInt32());
+        Assert.Equal(1, data.GetProperty("reports").GetInt32()); Assert.Equal(0, data.GetProperty("assets").GetInt32());
+        Assert.Equal(active.PostNumber, Assert.Single(data.GetProperty("recentPosts").EnumerateArray()).GetProperty("postNumber").GetInt64());
+        Assert.EndsWith("Z", data.GetProperty("checkedAtUtc").GetString());
+    }
+
+    [Fact]
     public async Task Invitations_can_be_revoked_expire_and_survive_failed_registration()
     {
         using var factory = new SetupApiFactory(); using var owner = await Owner(factory); using var visitor = Client(factory);
@@ -143,10 +218,18 @@ public sealed class CommunityFlowTests
         using var factory = new SetupApiFactory(); using var owner = await Owner(factory); using var visitor = Client(factory);
         for (var i = 0; i < 21; i++) await Post(owner, title: $"Topic {i:00}");
         await Post(owner, "Private", "Hidden Topic"); await Post(owner, title: "Literal 100% value");
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync("/api/posts/1/priority", new { priority = 100, expectedRevision = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync("/api/posts/2/priority", new { priority = 100, expectedRevision = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync("/api/posts/22/priority", new { priority = 10000, expectedRevision = 1 })).StatusCode);
         var first = await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory"); var second = await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory?page=2");
         Assert.Equal(22, first.GetProperty("total").GetInt32()); Assert.Equal(20, first.GetProperty("items").GetArrayLength()); Assert.Equal(2, second.GetProperty("items").GetArrayLength());
         var ids = first.GetProperty("items").EnumerateArray().Concat(second.GetProperty("items").EnumerateArray()).Select(item => item.GetProperty("postNumber").GetInt64()).ToArray();
         Assert.Equal(ids.Length, ids.Distinct().Count());
+        Assert.Equal(2, ids[0]); Assert.Equal(1, ids[1]); Assert.DoesNotContain(22L, ids);
+        var newest = await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory?sort=newest");
+        Assert.Equal(23, newest.GetProperty("items")[0].GetProperty("postNumber").GetInt64());
+        var category = await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory?category=uncategorized&query=Topic");
+        Assert.Equal(2, category.GetProperty("items")[0].GetProperty("postNumber").GetInt64());
         Assert.Equal(0, (await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory?query=Hidden")).GetProperty("total").GetInt32());
         Assert.Equal(1, (await visitor.GetFromJsonAsync<JsonElement>("/api/posts/directory?query=%25")).GetProperty("total").GetInt32());
         Assert.Equal(HttpStatusCode.BadRequest, (await visitor.GetAsync("/api/posts/directory?page=0")).StatusCode);

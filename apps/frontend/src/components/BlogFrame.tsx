@@ -30,7 +30,7 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
           controller.signal,
         ),
         fetchCollection<PostSummary>(
-          "/api/posts/directory",
+          "/api/posts/directory?sort=newest",
           "글 목록을 불러오지 못했습니다.",
           controller.signal,
         ),
@@ -38,7 +38,7 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
         .then(async ([nextCategories, nextPosts]) => {
           const project = nextCategories.find(category => category.name === "프로젝트" || category.slug.toLowerCase() === "project");
           if (project) {
-            const projectItems = await fetchCollection<PostSummary>(`/api/posts/directory?category=${encodeURIComponent(project.slug)}`, "프로젝트를 불러오지 못했습니다.", controller.signal);
+            const projectItems = await fetchCollection<PostSummary>(`/api/posts/directory?sort=newest&category=${encodeURIComponent(project.slug)}`, "프로젝트를 불러오지 못했습니다.", controller.signal);
             nextPosts = [...new Map([...nextPosts, ...projectItems].map(post => [post.postNumber, post])).values()];
           }
           if (!active) return;

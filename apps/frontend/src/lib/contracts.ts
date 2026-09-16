@@ -34,6 +34,9 @@ export const visibilityLabels: Record<PostVisibility, string> = {
 };
 
 export type PostSummary = {
+  createdAtUtc?: string;
+  priority?: number;
+  revision?: number;
   authorName?: string;
   authorId?: string;
   canEdit?: boolean;

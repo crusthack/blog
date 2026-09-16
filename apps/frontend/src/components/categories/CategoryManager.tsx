@@ -11,7 +11,9 @@ type CategoryDraft = Pick<
   "id" | "name" | "slug" | "description" | "sortOrder" | "isVisible"
 >;
 
-export function CategoryManager() {
+export function CategoryManager({ embedded = false }: { embedded?: boolean } = {}) {
+  const Container = embedded ? "section" : "main";
+  const Heading = embedded ? "h2" : "h1";
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
@@ -147,14 +149,14 @@ export function CategoryManager() {
   }
 
   if (isAuthLoading || !user?.isOwner) {
-    return <main className="mx-auto max-w-6xl p-10 text-gray-500 dark:text-gray-400">권한을 확인하고 있습니다.</main>;
+    return <Container className="mx-auto max-w-6xl p-10 text-gray-500 dark:text-gray-400">권한을 확인하고 있습니다.</Container>;
   }
 
   return (
-    <main data-ui-page="admin" className="mx-auto min-h-[75vh] w-full max-w-6xl px-4 py-12 sm:px-6">
+    <Container data-ui-page="admin" className="mx-auto min-h-[75vh] w-full max-w-6xl px-4 py-12 sm:px-6">
       <header className="mb-8">
         <p className="text-sm font-black tracking-[0.2em] text-emerald-600">TAXONOMY</p>
-        <h1 className="mt-2 text-4xl font-black">카테고리 관리</h1>
+        <Heading className="mt-2 text-4xl font-black">카테고리 관리</Heading>
         <p className="mt-3 text-gray-600 dark:text-gray-300">이름, 주소, 노출 여부와 표시 순서를 한곳에서 관리합니다.</p>
       </header>
       <div aria-live="polite">
@@ -265,7 +267,7 @@ export function CategoryManager() {
                     </small>
                   </div>
                   <div className="flex shrink-0 gap-2">
-                    <button className={neutralButton} disabled={busyCategoryId !== null} onClick={() => beginEdit(category)} type="button">편집</button>
+                    <button className={neutralButton} disabled={busyCategoryId !== null} onClick={() => beginEdit(category)} type="button">수정</button>
                     <button
                       className="border border-red-300 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
                       disabled={category.postCount > 0 || busyCategoryId !== null}
@@ -282,7 +284,7 @@ export function CategoryManager() {
           )}
         </section>
       </div>
-    </main>
+    </Container>
   );
 }
 

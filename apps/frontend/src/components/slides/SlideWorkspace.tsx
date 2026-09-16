@@ -41,6 +41,7 @@ function WorkspaceSession({ post, userId, mode, onMode }: { post: PostDetail; us
   const [error, setError] = useState("");
   const [toc, setToc] = useState(false);
   const [help, setHelp] = useState(false);
+  const [options, setOptions] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [eraser, setEraser] = useState(false);
   const [color, setColor] = useState(colors[2]);
@@ -196,7 +197,7 @@ function WorkspaceSession({ post, userId, mode, onMode }: { post: PostDetail; us
       case "redo": dispatch({ type: "redo" }); break;
       case "save": void save(); break;
       case "print": window.print(); break;
-      case "escape": if (help) setHelp(false); else if (toc) setToc(false); else if (drawing) setDrawing(false); else if (document.fullscreenElement) void document.exitFullscreen(); else leave(); break;
+      case "escape": if (options) setOptions(false); else if (help) setHelp(false); else if (toc) setToc(false); else if (drawing) setDrawing(false); else if (document.fullscreenElement) void document.exitFullscreen(); else leave(); break;
     }
   });
   useEffect(() => { const handler = (event: KeyboardEvent) => keyboard(event); window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, []);
@@ -208,15 +209,20 @@ function WorkspaceSession({ post, userId, mode, onMode }: { post: PostDetail; us
     ask("저장하지 않은 변경 사항이 있습니다. 링크로 이동할까요?", () => { leaving.current = true; location.assign(link.href); });
   }}>
     <header className="slide-topbar">
-      <button type="button" onClick={leave}>← 본문</button><strong title={post.title}>{post.title}</strong>
-      <button type="button" onClick={() => setToc(!toc)} aria-expanded={toc}>목차 (T)</button>
-      <button type="button" onClick={() => setHelp(!help)} aria-expanded={help}>단축키 (?)</button>
-      <button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? "전체화면 종료" : "전체화면 (F)"}</button>
-      <button type="button" className="slide-save" disabled={!ready || saving} onClick={() => void save()}>{saving ? "저장 중…" : "작업 저장 (Ctrl+S)"}</button>
+      <button type="button" title="목차 (T)" aria-label="목차" onClick={() => { setToc(!toc); setHelp(false); }} aria-expanded={toc}>☰</button>
+      <strong title={slide.title}>{slide.title}</strong>
+      <span className="slide-counter">{currentIndex + 1} / {slides.length}</span>
+      <button type="button" title="메모 추가 (M)" disabled={!ready || saving} onClick={addMemo}>메모</button>
+      <button type="button" title="그리기 (D)" disabled={!ready || saving} aria-pressed={drawing} onClick={() => setDrawing(!drawing)}>그리기</button>
+      <button type="button" className="slide-fullscreen" title="전체화면 (F)" onClick={() => void toggleFullscreen()}>{fullscreen ? "창 모드" : "전체화면"}</button>
+      <button type="button" title="설정 및 작업 저장" aria-expanded={options} aria-controls="slide-options" onClick={() => setOptions(!options)}>더보기{dirty ? " ·" : ""}</button>
+      <button type="button" title="본문으로 돌아가기 (Esc)" aria-label="본문으로 돌아가기" onClick={leave}>×</button>
     </header>
+    <section id="slide-options" className="slide-options" aria-label="슬라이드 설정 및 저장" hidden={!options}>
+      <div className="slide-options-heading"><h2>슬라이드 도구</h2><button type="button" onClick={() => setOptions(false)}>닫기</button></div>
     <div className="slide-toolbar">
-      <button type="button" disabled={!ready || saving} aria-pressed={drawing} onClick={() => setDrawing(!drawing)}>그리기 (D)</button>
-      <button type="button" disabled={!ready || saving} onClick={addMemo}>메모 (M)</button>
+      <button type="button" onClick={() => { setHelp(true); setToc(false); setOptions(false); }}>단축키 (?)</button>
+      <button type="button" className="slide-save" disabled={!ready || saving} onClick={() => void save()}>{saving ? "저장 중…" : "작업 저장 (Ctrl+S)"}</button>
       <button type="button" disabled={!ready || saving} onClick={addBlank}>필기 슬라이드 (N)</button>
       {slide.blank && <button type="button" disabled={saving} onClick={() => { change(removeBlank(workspace, slide.id)); go(currentIndex - 1); }}>필기 슬라이드 삭제</button>}
       <button type="button" disabled={!history.past.length || saving} onClick={() => dispatch({ type: "undo" })}>실행 취소</button>
@@ -228,9 +234,14 @@ function WorkspaceSession({ post, userId, mode, onMode }: { post: PostDetail; us
       }}><option value="auto">자동 (제목·분량)</option><option value="manual">수동 (---)</option></select></label>
       <label>테마 <select value={theme} onChange={event => setTheme(event.target.value)}><option value="system">사이트 설정</option><option value="light">밝게</option><option value="dark">어둡게</option></select></label>
       <label>확대 <select value={zoom} onChange={event => setZoom(Number(event.target.value))}>{[1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3].map(value => <option key={value} value={value}>{value === 1 ? "화면 맞춤" : `${value * 100}%`}</option>)}</select></label>
+      <button type="button" onClick={() => void toggleFullscreen()}>{fullscreen ? "전체화면 종료" : "전체화면 (F)"}</button>
       <button type="button" onClick={() => window.print()}>인쇄 / PDF (P)</button>
       <label><input type="checkbox" checked={printNotes} onChange={event => setPrintNotes(event.target.checked)} />인쇄에 필기 포함</label>
     </div>
+    <div className="slide-status" role="status">{!ready ? "작업 공간을 여는 중…" : dirty ? "저장하지 않은 변경 사항" : savedAt ? `마지막 저장 ${new Date(savedAt).toLocaleString("ko-KR")}` : "메모와 그림은 작업 저장을 눌러야 보관됩니다."} {message}</div>
+    <ServerWorkspaceTools postNumber={post.postNumber} source={post.content} mode={mode} userId={userId} workspace={workspace}
+      disabled={!ready || saving} onLoad={loaded => change(loaded)} />
+    </section>
     {drawing && <div className="slide-toolbar slide-pens">
       <button type="button" aria-pressed={!eraser} onClick={() => setEraser(false)}>펜</button>
       <button type="button" aria-pressed={eraser} onClick={() => setEraser(true)}>지우개 (E)</button>
@@ -240,9 +251,6 @@ function WorkspaceSession({ post, userId, mode, onMode }: { post: PostDetail; us
       <button type="button" disabled={saving} onClick={() => annotate({ ...annotation, strokes: [] })}>그림 지우기 (C)</button>
       <span>←/→ 색상 · ↑/↓ 굵기 · PageUp/Down 이동 · 지우개는 선을 클릭</span>
     </div>}
-    <div className="slide-status" role="status">{!ready ? "작업 공간을 여는 중…" : dirty ? "저장하지 않은 변경 사항" : savedAt ? `마지막 저장 ${new Date(savedAt).toLocaleString("ko-KR")}` : "메모와 그림은 작업 저장을 눌러야 보관됩니다."} {message}</div>
-    <ServerWorkspaceTools postNumber={post.postNumber} source={post.content} mode={mode} userId={userId} workspace={workspace}
-      disabled={!ready || saving} onLoad={loaded => change(loaded)} />
     {error && <div className="slide-error" role="alert">{error}<button type="button" onClick={() => setError("")}>닫기</button></div>}
     <div className="slide-main">
       {(toc || help) && <aside className="slide-panel">
@@ -264,11 +272,11 @@ function WorkspaceSession({ post, userId, mode, onMode }: { post: PostDetail; us
       </div>
     </div>
     <footer className="slide-navigation">
+      <span className="slide-footer-title" title={post.title}>{post.title}</span>
       <button type="button" disabled={currentIndex === 0} onClick={() => go(currentIndex - 1)}>이전</button>
       <label>슬라이드 <select aria-label="슬라이드 번호" value={currentIndex} onChange={event => go(Number(event.target.value))}>{slides.map((item, i) => <option key={item.id} value={i}>{i + 1} / {slides.length}</option>)}</select></label>
-      <span>{slide.title}</span><button type="button" disabled={currentIndex === slides.length - 1} onClick={() => go(currentIndex + 1)}>다음</button>
-      <button type="button" aria-label="슬라이드 축소" disabled={zoom <= 1} onClick={() => setZoom(clamp(zoom - 0.25, 1, 3))}>−</button>
-      <button type="button" aria-label="슬라이드 확대" disabled={zoom >= 3} onClick={() => setZoom(clamp(zoom + 0.25, 1, 3))}>+</button>
+      <button type="button" disabled={currentIndex === slides.length - 1} onClick={() => go(currentIndex + 1)}>다음</button>
+      <span className="slide-next-title" title={slides[currentIndex + 1]?.title}>{slides[currentIndex + 1] ? `다음 · ${slides[currentIndex + 1].title}` : "마지막 슬라이드"}</span>
     </footer>
     <dialog ref={dialog} className="slide-confirm" aria-labelledby="slide-confirm-title" onCancel={() => setPending(null)}>
       <h2 id="slide-confirm-title">{pending?.text}</h2>

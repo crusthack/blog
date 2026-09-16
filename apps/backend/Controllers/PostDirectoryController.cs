@@ -30,12 +30,20 @@ public sealed class PostDirectoryController(BlogDbContext db) : ControllerBase
             var pattern = "%" + request.Query.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
             query = query.Where(post => EF.Functions.Like(post.Title, pattern, "\\") || post.Description != null && EF.Functions.Like(post.Description, pattern, "\\"));
         }
+        var ascending = request.Direction == "asc" || request.Direction == null && request.Sort is "oldest" or "title";
         var ordered = request.Sort switch
         {
-            "oldest" => query.OrderBy(post => post.PostNumber),
-            "updated" => query.OrderByDescending(post => post.UpdatedAtUtc).ThenByDescending(post => post.PostNumber),
-            "title" => query.OrderBy(post => post.Title).ThenByDescending(post => post.PostNumber),
-            _ => query.OrderByDescending(post => post.PostNumber),
+            "priority" => (ascending ? query.OrderBy(post => post.Priority) : query.OrderByDescending(post => post.Priority))
+                .ThenByDescending(post => post.CreatedAtUtc).ThenByDescending(post => post.PostNumber),
+            "updated" => ascending
+                ? query.OrderBy(post => post.UpdatedAtUtc).ThenBy(post => post.PostNumber)
+                : query.OrderByDescending(post => post.UpdatedAtUtc).ThenByDescending(post => post.PostNumber),
+            "title" => ascending
+                ? query.OrderBy(post => post.Title).ThenBy(post => post.PostNumber)
+                : query.OrderByDescending(post => post.Title).ThenByDescending(post => post.PostNumber),
+            _ => ascending
+                ? query.OrderBy(post => post.CreatedAtUtc).ThenBy(post => post.PostNumber)
+                : query.OrderByDescending(post => post.CreatedAtUtc).ThenByDescending(post => post.PostNumber),
         };
         return Ok(new
         {
@@ -45,12 +53,15 @@ public sealed class PostDirectoryController(BlogDbContext db) : ControllerBase
             Items = await ordered.Skip((request.Page - 1) * 20).Take(20).Select(post => new
             {
                 post.PostNumber,
+                post.Priority,
+                post.Revision,
                 post.Title,
                 post.Description,
                 post.CategoryId,
                 CategoryName = post.Category == null ? null : post.Category.Name,
                 CategorySlug = post.Category == null ? null : post.Category.Slug,
                 post.Visibility,
+                CreatedAtUtc = DateTime.SpecifyKind(post.CreatedAtUtc, DateTimeKind.Utc),
                 UpdatedAtUtc = DateTime.SpecifyKind(post.UpdatedAtUtc, DateTimeKind.Utc),
                 PublishedAtUtc = post.PublishedAtUtc == null ? (DateTime?)null : DateTime.SpecifyKind(post.PublishedAtUtc.Value, DateTimeKind.Utc),
                 AuthorName = post.Owner.UserName,
@@ -66,7 +77,8 @@ public sealed class DirectoryRequest
     [StringLength(120)] public string? Query { get; init; }
     [StringLength(80)] public string? Category { get; init; }
     [RegularExpression("^(Public|Private|CodeProtected)$")] public string? Visibility { get; init; }
-    [RegularExpression("^(newest|oldest|updated|title)$")] public string Sort { get; init; } = "newest";
+    [RegularExpression("^(priority|created|newest|oldest|updated|title)$")] public string Sort { get; init; } = "priority";
+    [RegularExpression("^(asc|desc)$")] public string? Direction { get; init; }
     public bool Mine { get; init; }
     public bool Bookmarked { get; init; }
 }

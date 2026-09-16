@@ -242,7 +242,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
       <header className="editor-command-bar mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-black tracking-[0.16em] text-emerald-600">MARKDOWN EDITOR</p>
-          <h1 className="mt-2 text-3xl font-black">{postNumber ? "글 편집" : "새 글 작성"}</h1>
+          <h1 className="mt-2 text-3xl font-black">{postNumber ? "글 수정" : "새 글 작성"}</h1>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
             {dirty ? "저장하지 않은 변경 사항이 있습니다." : "저장 버튼을 누르면 글에 반영됩니다."} · Ctrl/⌘+S
           </p>

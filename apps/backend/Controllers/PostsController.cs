@@ -180,6 +180,23 @@ public sealed class PostsController(
         return Ok(ToDetail(post));
     }
 
+    [Authorize(Roles = Roles.Owner)]
+    [EnableRateLimiting("community-write")]
+    [HttpPut("{postNumber:long}/priority")]
+    public async Task<IActionResult> SetPriority(long postNumber, SetPostPriorityRequest request)
+    {
+        var post = await db.Posts.SingleOrDefaultAsync(post => post.PostNumber == postNumber);
+        if (post is null) return NotFound();
+        if (post.Revision != request.ExpectedRevision)
+            return Conflict(new ProblemDetails { Title = "글이 변경되었습니다. 목록을 새로고침한 뒤 다시 설정해 주세요." });
+        post.Priority = request.Priority;
+        post.Revision++;
+        Audit("post.priority", postNumber);
+        try { await db.SaveChangesAsync(); }
+        catch (DbUpdateConcurrencyException) { return Conflict(new ProblemDetails { Title = "글이 변경되었습니다. 목록을 새로고침해 주세요." }); }
+        return NoContent();
+    }
+
     [Authorize]
     [EnableRateLimiting("community-write")]
     [HttpDelete("{postNumber:long}")]
@@ -343,4 +360,10 @@ public sealed class UnlockPostRequest
 {
     [Required, StringLength(128, MinimumLength = 4)]
     public required string Code { get; init; }
+}
+
+public sealed class SetPostPriorityRequest
+{
+    [Range(0, 10000)] public int Priority { get; init; }
+    [Range(1, long.MaxValue)] public long ExpectedRevision { get; init; }
 }

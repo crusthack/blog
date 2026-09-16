@@ -1,5 +1,6 @@
 "use client";
 
+import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { PostDiscussion } from "./PostDiscussion";
 
 import Link from "next/link";
@@ -27,6 +28,8 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [post, setPost] = useState<PostDetail | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   const [error, setError] = useState("");
   const [lockedTitle, setLockedTitle] = useState<string | null>(null);
   const [accessCode, setAccessCode] = useState("");
@@ -74,6 +77,20 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
       });
     return () => controller.abort();
   }, [isAuthLoading, postNumber, reload, router, slideMode]);
+
+  async function deletePost() {
+    if (!post || deleting || !window.confirm(`“${post.title}” 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관됩니다.`)) return;
+    setDeleting(true); setDeleteError("");
+    try {
+      const response = await fetch(`/api/posts/${post.postNumber}`, { method: "DELETE", credentials: "include" });
+      if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+      router.replace("/posts");
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : "글을 삭제하지 못했습니다.");
+      setDeleting(false);
+    }
+  }
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -154,15 +171,19 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             <span className="text-gray-500">약 {readingMinutes}분</span>
             <Link href={`${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
             {post.canEdit ? (
+              <>
               <Link
                 data-ui="action"
                 className="ml-auto bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-700"
                 href={`/write/${post.postNumber}`}
               >
-                편집
+                수정
               </Link>
+              <button type="button" data-ui="action" className="border border-red-400 px-4 py-2 text-sm text-red-600 disabled:opacity-50" disabled={deleting} onClick={() => void deletePost()}>{deleting ? "삭제 중…" : "삭제"}</button>
+              </>
             ) : null}
           </div>
+          {deleteError && <p role="alert" className="mb-4 text-red-600">{deleteError}</p>}
           <h1 id="post-title" tabIndex={-1} className="text-4xl font-black tracking-tight md:text-5xl">{post.title}</h1>
           {post.description ? (
             <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>

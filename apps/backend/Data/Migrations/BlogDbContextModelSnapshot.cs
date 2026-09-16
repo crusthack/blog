@@ -257,6 +257,9 @@ namespace Blog.Api.Data.Migrations
                     b.Property<long>("PostNumber")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Priority")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("PublishedAtUtc")
                         .HasColumnType("TEXT");
 
@@ -291,6 +294,8 @@ namespace Blog.Api.Data.Migrations
                         .IsUnique();
 
                     b.HasIndex("DeletedAtUtc", "CategoryId", "PostNumber");
+
+                    b.HasIndex("DeletedAtUtc", "Priority", "PostNumber");
 
                     b.ToTable("Posts");
                 });

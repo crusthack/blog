@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./slides.css";
 @import "./community.css";
+@import "./admin.css";
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root,
@@ -820,6 +821,11 @@ summary {
 .board-visibility [data-visibility="Private"] { color: var(--danger); }
 .board-table .board-date { width: 6rem; color: var(--muted); font-size: 0.75rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .board-table .board-actions { width: 6.5rem; }
+.board-table .board-priority { width: 8rem; }
+.board-priority form { display: flex; align-items: center; gap: 0.3rem; }
+.board-priority input { width: 4.5rem; min-width: 0; border: 1px solid var(--border-soft); background: transparent; padding: 0.3rem; font-size: 0.8rem; }
+.board-priority button { font-size: 0.75rem; white-space: nowrap; color: var(--accent-strong); }
+.board-table-manage { min-width: 42rem; }
 .board-actions > div { display: flex; justify-content: center; gap: 0.7rem; white-space: nowrap; font-size: 0.8rem; }
 .board-actions a:hover, .board-actions button:hover { text-decoration: underline; }
 .board-actions button { color: var(--danger); }

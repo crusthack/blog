@@ -297,28 +297,12 @@ export function SiteHeader() {
                     새 글 작성
                   </Link>
                   <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                    href="/posts/manage" onClick={closeMenus}>
+                    href={user.isOwner ? "/admin#posts" : "/posts/manage"} onClick={closeMenus}>
                     {user.isOwner ? "게시글 전체 관리" : "내 글 관리"}
                   </Link>
                   <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/bookmarks" onClick={closeMenus}>북마크</Link>
                   <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/workspaces" onClick={closeMenus}>내 슬라이드 필기</Link>
-                  {user.isOwner && <>
-                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/community/manage" onClick={closeMenus}>커뮤니티 운영</Link>
-                  <Link
-                    className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                    href="/categories/manage"
-                    onClick={closeMenus}
-                  >
-                    카테고리 관리
-                  </Link>
-                  <Link
-                    className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                    href="/settings"
-                    onClick={closeMenus}
-                  >
-                    사이트 설정
-                  </Link>
-                  </>}
+                  {user.isOwner && <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/admin" onClick={closeMenus}>사이트 관리</Link>}
                   <button
                     className="site-nav-dropdown-link block w-full px-4 py-2.5 text-left text-sm font-bold transition"
                     onClick={() => {
