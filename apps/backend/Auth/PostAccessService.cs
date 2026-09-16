@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Security.Claims;
 using System.Text.Json;
 using Blog.Api.Models;
 using Microsoft.AspNetCore.DataProtection;
@@ -8,19 +9,21 @@ namespace Blog.Api.Auth;
 
 public sealed class PostAccessService(IDataProtectionProvider protection, IWebHostEnvironment environment)
 {
+    public static bool CanManage(Post post, HttpContext context) => context.User.IsInRole(Roles.Owner) ||
+        Guid.TryParse(context.User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) && post.OwnerId == id;
     private readonly IDataProtector protector = protection.CreateProtector("Blog.PostAccess.v1");
     private readonly PasswordHasher<Post> hasher = new();
     private static readonly TimeSpan Lifetime = TimeSpan.FromHours(12);
 
     public static bool IsListed(Post post, HttpContext context) =>
-        post.DeletedAtUtc == null && (context.User.IsInRole(Roles.Owner) ||
+        post.DeletedAtUtc == null && (CanManage(post, context) ||
         post.Category is not { IsVisible: false } &&
         post.Visibility is PostVisibility.Public or PostVisibility.CodeProtected);
 
     public bool CanRead(Post post, HttpContext context)
     {
         if (post.DeletedAtUtc != null) return false;
-        if (context.User.IsInRole(Roles.Owner)) return true;
+        if (CanManage(post, context)) return true;
         if (!IsListed(post, context)) return false;
         if (post.Visibility == PostVisibility.Public) return true;
         if (!context.Request.Cookies.TryGetValue(CookieName(post), out var cookie)) return false;

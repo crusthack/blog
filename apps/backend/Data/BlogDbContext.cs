@@ -15,6 +15,11 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
     public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
     public DbSet<SlideWorkspace> SlideWorkspaces => Set<SlideWorkspace>();
     public DbSet<PostCounter> PostCounters => Set<PostCounter>();
+    public DbSet<CommunityInvite> CommunityInvites => Set<CommunityInvite>();
+    public DbSet<PostComment> PostComments => Set<PostComment>();
+    public DbSet<PostBookmark> PostBookmarks => Set<PostBookmark>();
+    public DbSet<ContentReport> ContentReports => Set<ContentReport>();
+    public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -42,6 +47,8 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
             entity.HasKey(post => post.Id);
             entity.HasQueryFilter(post => post.DeletedAtUtc == null);
             entity.HasIndex(post => post.PostNumber).IsUnique();
+            entity.Property(post => post.Revision).IsConcurrencyToken().HasDefaultValue(1L);
+            entity.HasIndex(post => new { post.DeletedAtUtc, post.CategoryId, post.PostNumber });
             entity.Property(post => post.Title).HasMaxLength(240);
             entity.Property(post => post.Description).HasMaxLength(500);
             entity.Property(post => post.Visibility).HasMaxLength(24).HasDefaultValue(PostVisibility.Public);
@@ -91,6 +98,36 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
         {
             entity.HasKey(counter => counter.Id);
             entity.Property(counter => counter.Id).ValueGeneratedNever();
+        });
+        builder.Entity<CommunityInvite>().HasIndex(item => item.TokenHash).IsUnique();
+        builder.Entity<CommunityInvite>().Property(item => item.TokenHash).HasMaxLength(64);
+        builder.Entity<PostComment>(entity =>
+        {
+            entity.HasIndex(item => new { item.PostId, item.CreatedAtUtc, item.Id });
+            entity.Property(item => item.Content).HasMaxLength(10000);
+            entity.Property(item => item.Revision).IsConcurrencyToken();
+            entity.HasOne<Post>().WithMany().HasForeignKey(item => item.PostId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(item => item.Author).WithMany().HasForeignKey(item => item.AuthorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<PostComment>().WithMany().HasForeignKey(item => item.ParentId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<PostBookmark>(entity =>
+        {
+            entity.HasKey(item => new { item.UserId, item.PostId });
+            entity.HasOne<Post>().WithMany().HasForeignKey(item => item.PostId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(item => item.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<ContentReport>(entity =>
+        {
+            entity.HasIndex(item => new { item.ResolvedAtUtc, item.CreatedAtUtc });
+            entity.Property(item => item.Reason).HasMaxLength(1000);
+            entity.Property(item => item.Resolution).HasMaxLength(1000);
+            entity.HasOne(item => item.Post).WithMany().HasForeignKey(item => item.PostId).OnDelete(DeleteBehavior.Cascade);
+        });
+        builder.Entity<AuditEvent>(entity =>
+        {
+            entity.HasIndex(item => item.CreatedAtUtc);
+            entity.Property(item => item.Action).HasMaxLength(80);
+            entity.Property(item => item.Target).HasMaxLength(100);
         });
         builder.Entity<SlideWorkspace>(entity =>
         {

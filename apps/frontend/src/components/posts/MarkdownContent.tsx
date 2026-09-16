@@ -61,10 +61,10 @@ const markdownComponents: Components = {
   },
 };
 
-export function MarkdownContent({ source }: { source: string }) {
+export function MarkdownContent({ source, headingIds = true }: { source: string; headingIds?: boolean }) {
   return (
     <div className="content-markdown markdown-body">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm, remarkHeadingIds]}>{source}</ReactMarkdown>
+      <ReactMarkdown components={markdownComponents} remarkPlugins={headingIds ? [remarkGfm, remarkHeadingIds] : [remarkGfm]}>{source}</ReactMarkdown>
     </div>
   );
 }

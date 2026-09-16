@@ -1,5 +1,7 @@
 "use client";
 
+import { PostDiscussion } from "./PostDiscussion";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
@@ -151,7 +153,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             ) : null}
             <span className="text-gray-500">약 {readingMinutes}분</span>
             <Link href={`${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
-            {user?.isOwner ? (
+            {post.canEdit ? (
               <Link
                 data-ui="action"
                 className="ml-auto bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-700"
@@ -166,6 +168,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>
           ) : null}
           <div className="mt-5 flex flex-wrap gap-4 text-sm text-gray-500">
+            {post.authorName && <span>작성자 {post.authorName}</span>}
             <time dateTime={post.createdAtUtc}>작성 {formatDate(post.createdAtUtc)}</time>
             <time dateTime={post.updatedAtUtc}>수정 {formatDate(post.updatedAtUtc)}</time>
           </div>
@@ -176,6 +179,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
           </div>
         </div>
         <PostReadingActions categorySlug={post.categorySlug} />
+        <PostDiscussion key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} />
       </article>
     </BlogFrame>
   );

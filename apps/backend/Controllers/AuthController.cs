@@ -20,6 +20,8 @@ public sealed class AuthController(
     public async Task<ActionResult<CurrentUserResponse>> Login(LoginRequest request)
     {
         var username = request.Username.Trim();
+        var candidate = await userManager.FindByNameAsync(username);
+        if (candidate?.IsSuspended == true) return Unauthorized(new ProblemDetails { Title = "로그인할 수 없는 계정입니다." });
         var result = await signInManager.PasswordSignInAsync(
             username,
             request.Password,

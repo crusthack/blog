@@ -142,8 +142,8 @@ public sealed class MySlideWorkspacesController(BlogDbContext db) : ControllerBa
                 item.Mode,
                 SavedAtUtc = DateTime.SpecifyKind(item.SavedAtUtc, DateTimeKind.Utc),
                 item.Revision,
-                Title = db.Posts.Where(post => post.Id == item.PostId && (owner || post.Visibility != PostVisibility.Private && (post.Category == null || post.Category.IsVisible))).Select(post => post.Title).FirstOrDefault(),
-                PostNumber = db.Posts.Where(post => post.Id == item.PostId && (owner || post.Visibility != PostVisibility.Private && (post.Category == null || post.Category.IsVisible))).Select(post => (long?)post.PostNumber).FirstOrDefault(),
+                Title = db.Posts.Where(post => post.Id == item.PostId && (owner || post.OwnerId == userId || post.Visibility != PostVisibility.Private && (post.Category == null || post.Category.IsVisible))).Select(post => post.Title).FirstOrDefault(),
+                PostNumber = db.Posts.Where(post => post.Id == item.PostId && (owner || post.OwnerId == userId || post.Visibility != PostVisibility.Private && (post.Category == null || post.Category.IsVisible))).Select(post => (long?)post.PostNumber).FirstOrDefault(),
             }).ToListAsync());
     }
     [HttpDelete("{id:guid}")]

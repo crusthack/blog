@@ -199,12 +199,14 @@ public sealed class PostAccessTests
 
     private static async Task Update(HttpClient owner, PostDetailResponse post, string visibility, string? code)
     {
+        var current = (await owner.GetFromJsonAsync<PostDetailResponse>(Route(post)))!;
         var response = await owner.PutAsJsonAsync(Route(post), new UpdatePostRequest
         {
             Title = post.Title,
             Content = post.Content,
             Visibility = visibility,
             AccessCode = code,
+            ExpectedRevision = current.Revision,
         });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }

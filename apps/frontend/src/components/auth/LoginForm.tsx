@@ -68,8 +68,9 @@ export function LoginForm() {
         type="submit"
         disabled={isSubmitting}
       >
-        {isSubmitting ? "로그인 중..." : "Owner 로그인"}
+        {isSubmitting ? "로그인 중..." : "로그인"}
       </button>
+      <a className="block mt-5 underline" href="/join">초대 코드로 회원 가입</a>
     </form>
   );
 }

@@ -24,7 +24,8 @@ public sealed class PostAssetsController(
     private const long MaxPdfFileSize = 25 * 1024 * 1024;
     private const long MaxPixelCount = 40_000_000;
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PostAssetResponse>>> List(
         long postNumber,
@@ -43,7 +44,8 @@ public sealed class PostAssetsController(
         return Ok(assets);
     }
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [RequestSizeLimit(MaxPdfFileSize + 64 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxPdfFileSize + 64 * 1024)]
     [HttpPost]
@@ -145,7 +147,6 @@ public sealed class PostAssetsController(
                 candidate => candidate.Id == assetId && candidate.Post.PostNumber == postNumber,
                 cancellationToken);
         if (asset is null) return NotFound();
-
         if (!access.CanRead(asset.Post, HttpContext))
         {
             return NotFound();
@@ -164,7 +165,8 @@ public sealed class PostAssetsController(
         return PhysicalFile(path, asset.ContentType, enableRangeProcessing: true);
     }
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [HttpPatch("{assetId:guid}")]
     public async Task<ActionResult<PostAssetResponse>> Rename(
         long postNumber,
@@ -178,6 +180,7 @@ public sealed class PostAssetsController(
                 candidate => candidate.Id == assetId && candidate.Post.PostNumber == postNumber,
                 cancellationToken);
         if (asset is null) return NotFound();
+        if (!PostAccessService.CanManage(asset.Post, HttpContext)) return Forbid();
 
         var normalizedName = NormalizeName(request.Name);
         if (normalizedName is null)
@@ -201,7 +204,8 @@ public sealed class PostAssetsController(
         return Ok(ToResponse(postNumber, asset));
     }
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [HttpDelete("{assetId:guid}")]
     public async Task<IActionResult> Delete(
         long postNumber,
@@ -214,6 +218,7 @@ public sealed class PostAssetsController(
                 candidate => candidate.Id == assetId && candidate.Post.PostNumber == postNumber,
                 cancellationToken);
         if (asset is null) return NotFound();
+        if (!PostAccessService.CanManage(asset.Post, HttpContext)) return Forbid();
 
         db.PostAssets.Remove(asset);
         await db.SaveChangesAsync(cancellationToken);
@@ -224,11 +229,15 @@ public sealed class PostAssetsController(
         return NoContent();
     }
 
-    private async Task<Guid?> GetPostId(long postNumber, CancellationToken cancellationToken) =>
-        await db.Posts
-            .Where(post => post.PostNumber == postNumber)
+    private async Task<Guid?> GetPostId(long postNumber, CancellationToken cancellationToken)
+    {
+        var actor = Guid.Parse(User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+        var owner = User.IsInRole(Roles.Owner);
+        return await db.Posts
+            .Where(post => post.PostNumber == postNumber && (owner || post.OwnerId == actor))
             .Select(post => (Guid?)post.Id)
             .SingleOrDefaultAsync(cancellationToken);
+    }
 
     private static string? NormalizeName(string value)
     {

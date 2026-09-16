@@ -8,23 +8,24 @@ import { type Category, type PostSummary, readProblem, visibilityLabels } from "
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { postPath } from "@/lib/postPaths";
 
-type Props = { categorySlug?: string; manage?: boolean };
+type Props = { categorySlug?: string; manage?: boolean; mine?: boolean; bookmarked?: boolean };
 const pageSize = 20;
 
-export function PostList({ categorySlug, manage = false }: Props) {
+export function PostList({ categorySlug, manage = false, mine = false, bookmarked = false }: Props) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if (manage && !isLoading && !user?.isOwner) router.replace("/login");
-  }, [manage, isLoading, user, router]);
-  if (isLoading || (manage && !user?.isOwner)) {
+    if ((manage || mine || bookmarked) && !isLoading && !user) router.replace("/login");
+  }, [manage, mine, bookmarked, isLoading, user, router]);
+  if (isLoading || ((manage || mine || bookmarked) && !user)) {
     return <p className="board-notice" role="status">{isLoading ? "글 목록을 준비하고 있습니다." : "로그인이 필요합니다."}</p>;
   }
   return <PostDirectory key={`${categorySlug ?? "all"}:${manage}:${user?.id ?? "visitor"}`}
-    categorySlug={categorySlug} manage={manage} isOwner={Boolean(user?.isOwner)} />;
+    categorySlug={categorySlug} manage={manage} mine={mine || (manage && !user?.isOwner)} bookmarked={bookmarked} isOwner={Boolean(user?.isOwner)} canWrite={Boolean(user)} />;
 }
 
-function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boolean }) {
+function PostDirectory({ categorySlug, manage, mine, bookmarked, isOwner, canWrite }: Props & { isOwner: boolean; canWrite: boolean }) {
+  const [total, setTotal] = useState(0);
   const [posts, setPosts] = useState<PostSummary[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,16 +46,19 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
     async function load() {
       try {
         const [postResponse, categoryResponse] = await Promise.all([
-          fetch("/api/posts", { cache: "no-store", credentials: "include", signal: controller.signal }),
+          fetch(`/api/posts/directory?${new URLSearchParams({ page: String(page), query: search, sort, ...(categorySlug || categoryId ? { category: categorySlug || categoryId } : {}), ...(visibility ? { visibility } : {}), ...(mine ? { mine: "true" } : {}), ...(bookmarked ? { bookmarked: "true" } : {}) })}`, { cache: "no-store", credentials: "include", signal: controller.signal }),
           fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal }),
         ]);
         if (!postResponse.ok) throw new Error(await readProblem(postResponse, "글 목록을 불러오지 못했습니다."));
         if (!categoryResponse.ok) throw new Error(await readProblem(categoryResponse, "카테고리를 불러오지 못했습니다."));
         const [loadedPosts, loadedCategories] = await Promise.all([
-          postResponse.json() as Promise<PostSummary[]>, categoryResponse.json() as Promise<Category[]>,
+          postResponse.json() as Promise<{ items: PostSummary[]; total: number }>, categoryResponse.json() as Promise<Category[]>,
         ]);
         if (controller.signal.aborted) return;
-        setPosts(loadedPosts.sort((left, right) => right.postNumber - left.postNumber));
+        if (page > Math.max(1, Math.ceil(loadedPosts.total / pageSize))) {
+          setPage(Math.max(1, Math.ceil(loadedPosts.total / pageSize)));
+        }
+        setPosts(loadedPosts.items); setTotal(loadedPosts.total); setLoadError("");
         setCategories(loadedCategories);
       } catch (reason) {
         if (!controller.signal.aborted) setLoadError(reason instanceof Error ? reason.message : "목록을 불러오지 못했습니다.");
@@ -64,22 +68,13 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
     }
     void load();
     return () => controller.abort();
-  }, [reload]);
+  }, [reload, page, search, sort, categorySlug, categoryId, visibility, mine, bookmarked]);
 
   const activeCategory = categories.find((category) => category.slug === categorySlug);
   const missingCategory = Boolean(categorySlug && !isLoading && !loadError && !activeCategory);
-  const selectedCategory = activeCategory?.id ?? categoryId;
-  const filtered = posts.filter((post) => {
-    if (selectedCategory === "uncategorized" ? post.categoryId !== null : selectedCategory && post.categoryId !== selectedCategory) return false;
-    if (visibility && post.visibility !== visibility) return false;
-    return !search || `${post.title}\n${post.description ?? ""}`.toLocaleLowerCase("ko-KR").includes(search.toLocaleLowerCase("ko-KR"));
-  }).sort((left, right) => sort === "oldest" ? left.postNumber - right.postNumber
-    : sort === "updated" ? Date.parse(right.updatedAtUtc) - Date.parse(left.updatedAtUtc) || right.postNumber - left.postNumber
-    : sort === "title" ? left.title.localeCompare(right.title, "ko") || right.postNumber - left.postNumber
-    : right.postNumber - left.postNumber);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const visiblePosts = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = page;
+  const visiblePosts = posts;
   const firstPage = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
   const pageNumbers = Array.from({ length: Math.min(5, pageCount) }, (_, index) => firstPage + index);
 
@@ -98,6 +93,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
       const response = await fetch(`/api/posts/${post.postNumber}`, { method: "DELETE", credentials: "include" });
       if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
       setPosts((previous) => previous.filter((item) => item.postNumber !== post.postNumber));
+      setReload(value => value + 1);
       setMessage(`“${post.title}” 글을 휴지통으로 옮겼습니다.`);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
     } catch (reason) {
@@ -111,20 +107,20 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
     <section className="post-board" aria-label={manage ? "전체 게시글 관리" : "게시글 목록"}>
       <header className="board-heading">
         <div>
-          <h1>{manage ? "게시글 전체 관리" : categorySlug ? activeCategory?.name ?? "카테고리" : "전체 글"}</h1>
+          <h1>{manage ? (isOwner ? "게시글 전체 관리" : "내 글 관리") : bookmarked ? "북마크" : mine ? "내 글" : categorySlug ? activeCategory?.name ?? "카테고리" : "전체 글"}</h1>
           <p>{manage ? "공개·비공개·코드 보호 글을 검색하고 관리합니다." : activeCategory?.description ?? "최신 글부터 순서대로 확인하세요."}</p>
         </div>
         <div className="board-heading-actions">
-          {manage ? <><Link href="/posts/trash">휴지통</Link><Link href="/storage">첨부 파일 점검</Link></> : null}
+          {manage && isOwner ? <><Link href="/posts/trash">휴지통</Link><Link href="/storage">첨부 파일 점검</Link></> : null}
           {categorySlug || manage ? <Link href="/posts">전체 글 보기</Link> : null}
-          {isOwner ? <Link className="board-primary" href="/write">글쓰기</Link> : null}
+          {canWrite ? <Link className="board-primary" href="/write">글쓰기</Link> : null}
         </div>
       </header>
       <form className="board-filters" role="search" onSubmit={submitSearch}>
         {!categorySlug ? <label><span className="sr-only">카테고리 필터</span>
           <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1); }}>
             <option value="">전체 카테고리</option><option value="uncategorized">미분류</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}{!category.isVisible ? " (숨김)" : ""}</option>)}
+            {categories.map((category) => <option key={category.id} value={category.slug}>{category.name}{!category.isVisible ? " (숨김)" : ""}</option>)}
           </select>
         </label> : null}
         {manage ? <label><span className="sr-only">공개 범위 필터</span>
@@ -155,13 +151,13 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
         }}>다시 시도</button></div>
         : missingCategory ? <p className="board-notice" role="alert">존재하지 않는 카테고리입니다.</p>
         : <>
-          <div className="board-summary"><span>총 <strong>{filtered.length}</strong>개</span><span>{currentPage} / {pageCount} 페이지</span></div>
+          <div className="board-summary"><span>총 <strong>{total}</strong>개</span><span>{currentPage} / {pageCount} 페이지</span></div>
           <div className="board-table-wrap">
             <table className={`board-table${manage ? " board-table-manage" : ""}`}>
               <caption className="sr-only">{manage ? "게시글 전체 관리 목록" : "게시글 목록"}</caption>
               <thead><tr>
                 <th scope="col" className="board-number">번호</th><th scope="col" className="board-category">분류</th>
-                <th scope="col" className="board-title">제목</th><th scope="col" className="board-visibility">공개 범위</th>
+                <th scope="col" className="board-title">제목</th><th scope="col">작성자</th><th scope="col" className="board-visibility">공개 범위</th>
                 <th scope="col" className="board-date">{manage ? "수정일" : "작성일"}</th>
                 {manage ? <th scope="col" className="board-actions">관리</th> : null}
               </tr></thead>
@@ -169,7 +165,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
                 {visiblePosts.map((post) => <tr key={post.postNumber}>
                   <td className="board-number">{post.postNumber}</td>
                   <td className="board-category"><span title={post.categoryName ?? "미분류"}>{post.categoryName ?? "미분류"}</span></td>
-                  <td className="board-title"><Link href={postPath(post)} title={post.title}>{post.title}</Link></td>
+                  <td className="board-title"><Link href={postPath(post)} title={post.title}>{post.title}</Link></td><td>{post.authorName}</td>
                   <td className="board-visibility"><span data-visibility={post.visibility}>{visibilityLabels[post.visibility]}</span></td>
                   <td className="board-date"><time dateTime={manage ? post.updatedAtUtc : post.publishedAtUtc ?? post.updatedAtUtc}>
                     {formatDate(manage ? post.updatedAtUtc : post.publishedAtUtc ?? post.updatedAtUtc)}
@@ -180,7 +176,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
                       onClick={() => void deletePost(post)}>{deleting === post.postNumber ? "삭제 중" : "삭제"}</button>
                   </div></td> : null}
                 </tr>)}
-                {visiblePosts.length === 0 ? <tr><td colSpan={manage ? 6 : 5} className="board-empty">
+                {visiblePosts.length === 0 ? <tr><td colSpan={manage ? 7 : 6} className="board-empty">
                   {search || categoryId || visibility ? "조건에 맞는 글이 없습니다." : "등록된 글이 없습니다."}
                 </td></tr> : null}
               </tbody>

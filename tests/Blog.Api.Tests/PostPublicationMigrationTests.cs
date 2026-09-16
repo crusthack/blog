@@ -19,8 +19,8 @@ public sealed class PostPublicationMigrationTests
         await db.GetService<IMigrator>().MigrateAsync("20260903160832_AddPostAssetsAndSiteSettings");
 
         var owner = new ApplicationUser { UserName = "migration-owner" };
-        db.Users.Add(owner);
-        await db.SaveChangesAsync();
+        // Seed the old schema without referencing properties introduced by later migrations.
+        await db.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO AspNetUsers (Id, UserName, CreatedAtUtc, EmailConfirmed, PhoneNumberConfirmed, TwoFactorEnabled, LockoutEnabled, AccessFailedCount) VALUES ({owner.Id}, {owner.UserName}, {owner.CreatedAtUtc}, 0, 0, 0, 0, 0)");
         var created = new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
         var published = created.AddDays(1);
         foreach (var status in new[] { "Draft", "Published" })

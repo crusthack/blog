@@ -14,6 +14,7 @@ const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
 export function PostEditor({ postNumber }: { postNumber?: string }) {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const [revision, setRevision] = useState(1);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState(initialContent);
@@ -44,7 +45,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   }, [pendingLink]);
 
   useEffect(() => {
-    if (!user?.isOwner) return;
+    if (!user) return;
     function shortcut(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -75,7 +76,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
 
   useEffect(() => {
     if (isAuthLoading) return;
-    if (!user?.isOwner) {
+    if (!user) {
       router.replace("/login");
       return;
     }
@@ -93,6 +94,8 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
       })
       .then((post) => {
         if (controller.signal.aborted) return;
+        if (!post.canEdit) throw new Error("본인이 작성한 글만 편집할 수 있습니다.");
+        setRevision(post.revision);
         setTitle(post.title);
         setDescription(post.description ?? "");
         setContent(post.content);
@@ -115,7 +118,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   }, [isAuthLoading, postNumber, router, user]);
 
   useEffect(() => {
-    if (!user?.isOwner) return;
+    if (!user) return;
     const controller = new AbortController();
     void fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal })
       .then(async (response) => {
@@ -142,7 +145,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title, description, content, categoryId: categoryId || null, visibility,
+          title, description, content, categoryId: categoryId || null, visibility, expectedRevision: revision,
           accessCode: visibility === "CodeProtected" && accessCode ? accessCode : null,
         }),
       });
@@ -220,7 +223,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   if (isAuthLoading || isLoading) {
     return <main className="mx-auto max-w-7xl p-10 text-gray-500 dark:text-gray-400">편집기를 준비하고 있습니다.</main>;
   }
-  if (!user?.isOwner) return null;
+  if (!user) return null;
 
   return (
     <main data-ui-page="admin" className="mx-auto min-h-[80vh] w-full max-w-[1600px] px-4 py-10 sm:px-6">
@@ -302,7 +305,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">
               {visibility === "Public" ? "누구나 글과 첨부 파일을 볼 수 있습니다."
-                : visibility === "Private" ? "로그인한 Owner만 볼 수 있으며 목록과 검색에서 숨깁니다."
+                : visibility === "Private" ? "작성자와 운영자만 볼 수 있으며 다른 회원의 목록과 검색에서 숨깁니다."
                 : "제목·설명은 공개되며 본문과 첨부 파일은 코드 입력 후 열립니다."}
             </p>
             {visibility === "CodeProtected" ? (

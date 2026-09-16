@@ -6,6 +6,7 @@ using Blog.Api.Setup;
 using Blog.Api.Storage;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
@@ -157,6 +158,9 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("workspace", context =>
         RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions { PermitLimit = 60, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+    options.AddPolicy("community-write", context =>
+        RateLimitPartition.GetFixedWindowLimiter(context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions { PermitLimit = 30, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     options.AddPolicy("public-read", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -188,6 +192,27 @@ if (app.Environment.IsDevelopment())
 
 app.UseRateLimiter();
 app.UseAuthentication();
+app.Use(async (context, next) =>
+{
+    // Same-origin browser mutations only; non-browser API clients have no Fetch Metadata header.
+    var site = context.Request.Headers["Sec-Fetch-Site"].ToString();
+    if (context.Request.Method is not "GET" and not "HEAD" and not "OPTIONS" && site is "cross-site" or "same-site")
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden; return;
+    }
+    if (context.User.Identity?.IsAuthenticated == true)
+    {
+        var db = context.RequestServices.GetRequiredService<BlogDbContext>();
+        var rawId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!Guid.TryParse(rawId, out var id) || !await db.Users.AnyAsync(user => user.Id == id && !user.IsSuspended))
+        {
+            await context.SignOutAsync(IdentityConstants.ApplicationScheme);
+            context.Response.Headers.CacheControl = "no-store";
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized; return;
+        }
+    }
+    await next(context);
+});
 app.UseAuthorization();
 app.MapGet("/api/health", async (BlogDbContext db, CancellationToken cancellationToken) =>
 {

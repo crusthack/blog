@@ -173,6 +173,8 @@ docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d
 
 ## 검증
 
+회원 참여·운영 기능과 후속 인프라 계획은 [마크다운 커뮤니티 고도화](docs/COMMUNITY_EVOLUTION.md)를 참고합니다. 운영자 메뉴의 커뮤니티 운영 화면에서 초대를 발급하고 회원·신고를 관리합니다.
+
 편집기와 읽기 화면의 개선 사항은 [사용성 개선 기록](docs/PRODUCT_IMPROVEMENTS.md)에 정리되어 있습니다.
 
 슬라이드뷰, 메모, 드로잉, 저장 정책과 단축키는 [슬라이드 작업 공간](docs/SLIDE_WORKSPACE.md)을 참고합니다.

@@ -25,13 +25,15 @@ public sealed class PostsController(
     [EnableRateLimiting("public-read")]
     public async Task<ActionResult<IReadOnlyList<PostSummaryResponse>>> GetPosts(
         [FromQuery] Guid? categoryId,
-        [FromQuery, StringLength(120)] string? query)
+        [FromQuery, StringLength(120)] string? query,
+        [FromQuery, Range(1, 100000)] int page = 1)
     {
         var canManage = User.IsInRole(Roles.Owner);
+        TryGetUserId(out var actor);
         var postsQuery = db.Posts.AsNoTracking();
         if (!canManage)
             postsQuery = postsQuery.Where(post =>
-                (post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected) &&
+                post.OwnerId == actor || (post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected) &&
                 (post.Category == null || post.Category.IsVisible));
 
         if (categoryId.HasValue)
@@ -45,6 +47,7 @@ public sealed class PostsController(
 
         var posts = await postsQuery
             .OrderByDescending(post => post.UpdatedAtUtc)
+            .ThenByDescending(post => post.PostNumber).Skip((page - 1) * 100).Take(100)
             .Select(post => new PostSummaryResponse(
                 post.PostNumber,
                 post.Title,
@@ -66,7 +69,7 @@ public sealed class PostsController(
     public async Task<ActionResult<PostDetailResponse>> GetPost(long postNumber)
     {
         var post = await db.Posts.AsNoTracking()
-            .Include(candidate => candidate.Category)
+            .Include(candidate => candidate.Category).Include(candidate => candidate.Owner)
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
 
         if (post is null || !PostAccessService.IsListed(post, HttpContext))
@@ -91,14 +94,15 @@ public sealed class PostsController(
         var post = await db.Posts.AsNoTracking().Include(item => item.Category)
             .SingleOrDefaultAsync(item => item.PostNumber == postNumber);
         if (post is null || !PostAccessService.IsListed(post, HttpContext)) return NotFound();
-        if (User.IsInRole(Roles.Owner) || post.Visibility == PostVisibility.Public) return NoContent();
+        if (PostAccessService.CanManage(post, HttpContext) || post.Visibility == PostVisibility.Public) return NoContent();
         if (post.Visibility != PostVisibility.CodeProtected || !access.VerifyCode(post, request.Code))
             return BadRequest(new ProblemDetails { Title = "접근 코드가 올바르지 않습니다." });
         access.Grant(post, HttpContext);
         return NoContent();
     }
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [HttpPost]
     public async Task<ActionResult<PostDetailResponse>> Create(CreatePostRequest request)
     {
@@ -108,7 +112,7 @@ public sealed class PostsController(
         if (request.CategoryId.HasValue)
         {
             category = await db.Categories.SingleOrDefaultAsync(item => item.Id == request.CategoryId);
-            if (category is null)
+            if (category is null || !User.IsInRole(Roles.Owner) && !category.IsVisible)
                 return BadRequest(new ProblemDetails { Title = "존재하지 않는 카테고리입니다." });
         }
 
@@ -134,20 +138,24 @@ public sealed class PostsController(
         var accessError = access.Configure(post, request.Visibility, request.AccessCode);
         if (accessError is not null) return BadRequest(new ProblemDetails { Title = accessError });
         db.Posts.Add(post);
+        Audit("post.create", postNumber);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
         return Created($"/api/posts/{post.PostNumber}", ToDetail(post));
     }
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [HttpPut("{postNumber:long}")]
     public async Task<ActionResult<PostDetailResponse>> Update(
         long postNumber,
         UpdatePostRequest request)
     {
-        var post = await db.Posts.Include(candidate => candidate.Category)
+        var post = await db.Posts.Include(candidate => candidate.Category).Include(candidate => candidate.Owner)
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
         if (post is null) return NotFound();
+        if (!PostAccessService.CanManage(post, HttpContext)) return Forbid();
+        if (request.ExpectedRevision != post.Revision) return Conflict(new ProblemDetails { Title = "다른 화면에서 글이 수정되었습니다. 현재 내용을 복사한 뒤 새로고침해 주세요." });
 
         var accessError = access.Configure(post, request.Visibility, request.AccessCode);
         if (accessError is not null) return BadRequest(new ProblemDetails { Title = accessError });
@@ -158,7 +166,7 @@ public sealed class PostsController(
         if (request.CategoryId.HasValue)
         {
             category = await db.Categories.SingleOrDefaultAsync(item => item.Id == request.CategoryId);
-            if (category is null)
+            if (category is null || !User.IsInRole(Roles.Owner) && !category.IsVisible)
                 return BadRequest(new ProblemDetails { Title = "존재하지 않는 카테고리입니다." });
         }
         post.CategoryId = request.CategoryId;
@@ -166,19 +174,25 @@ public sealed class PostsController(
         post.UpdatedAtUtc = DateTime.UtcNow;
         post.PublishedAtUtc ??= post.UpdatedAtUtc;
 
-        await db.SaveChangesAsync();
+        post.Revision++;
+        Audit("post.update", post.PostNumber);
+        try { await db.SaveChangesAsync(); } catch (DbUpdateConcurrencyException) { return Conflict(new ProblemDetails { Title = "글이 변경되었습니다. 다시 확인해 주세요." }); }
         return Ok(ToDetail(post));
     }
 
-    [Authorize(Roles = Roles.Owner)]
+    [Authorize]
+    [EnableRateLimiting("community-write")]
     [HttpDelete("{postNumber:long}")]
     public async Task<IActionResult> Delete(long postNumber)
     {
         var post = await db.Posts.SingleOrDefaultAsync(post => post.PostNumber == postNumber);
         if (post is null) return NotFound();
+        if (!PostAccessService.CanManage(post, HttpContext)) return Forbid();
+        post.Revision++;
+        Audit("post.trash", postNumber);
         post.DeletedAtUtc = DateTime.UtcNow;
         post.AccessCodeVersion = Guid.NewGuid();
-        await db.SaveChangesAsync();
+        try { await db.SaveChangesAsync(); } catch (DbUpdateConcurrencyException) { return Conflict(); }
         logger.LogInformation("Post {PostNumber} moved to trash by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
         return NoContent();
     }
@@ -194,11 +208,13 @@ public sealed class PostsController(
     [HttpPost("{postNumber:long}/restore")]
     public async Task<IActionResult> Restore(long postNumber)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         // Restoring never republishes content without an explicit visibility choice.
         var restored = await db.Posts.IgnoreQueryFilters().Where(post => post.PostNumber == postNumber && post.DeletedAtUtc != null)
             .ExecuteUpdateAsync(update => update.SetProperty(post => post.DeletedAtUtc, (DateTime?)null)
-                .SetProperty(post => post.Visibility, PostVisibility.Private).SetProperty(post => post.UpdatedAtUtc, DateTime.UtcNow));
+                .SetProperty(post => post.Visibility, PostVisibility.Private).SetProperty(post => post.UpdatedAtUtc, DateTime.UtcNow).SetProperty(post => post.Revision, post => post.Revision + 1));
         if (restored == 0) return NotFound();
+        Audit("post.restore", postNumber); await db.SaveChangesAsync(); await transaction.CommitAsync();
         logger.LogInformation("Post {PostNumber} restored privately by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
         return NoContent();
     }
@@ -207,6 +223,7 @@ public sealed class PostsController(
     [HttpDelete("{postNumber:long}/permanent")]
     public async Task<IActionResult> PermanentlyDelete(long postNumber)
     {
+        await using var transaction = await db.Database.BeginTransactionAsync();
         var post = await db.Posts.IgnoreQueryFilters()
             .Include(candidate => candidate.Assets)
             .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber && candidate.DeletedAtUtc != null);
@@ -217,6 +234,7 @@ public sealed class PostsController(
             .ToArray();
         var removed = await db.Posts.IgnoreQueryFilters().Where(candidate => candidate.Id == post.Id && candidate.DeletedAtUtc != null).ExecuteDeleteAsync();
         if (removed == 0) return NotFound();
+        Audit("post.purge", postNumber); await db.SaveChangesAsync(); await transaction.CommitAsync();
         logger.LogInformation("Post {PostNumber} permanently deleted by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
 
         foreach (var storageFileName in storageFileNames)
@@ -252,7 +270,7 @@ public sealed class PostsController(
     private static string? Normalize(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static PostDetailResponse ToDetail(Post post) => new(
+    private PostDetailResponse ToDetail(Post post) => new(
         post.PostNumber,
         post.Title,
         post.Description,
@@ -261,9 +279,14 @@ public sealed class PostsController(
         post.Category?.Slug,
         post.Visibility,
         post.Content,
-        post.CreatedAtUtc,
-        post.UpdatedAtUtc,
-        post.PublishedAtUtc);
+        DateTime.SpecifyKind(post.CreatedAtUtc, DateTimeKind.Utc),
+        DateTime.SpecifyKind(post.UpdatedAtUtc, DateTimeKind.Utc),
+        post.PublishedAtUtc is DateTime published ? DateTime.SpecifyKind(published, DateTimeKind.Utc) : null, post.OwnerId, post.Revision, PostAccessService.CanManage(post, HttpContext), post.Owner?.UserName);
+
+    private void Audit(string action, long number)
+    {
+        if (TryGetUserId(out var actor)) db.AuditEvents.Add(new AuditEvent { ActorId = actor, Action = action, Target = number.ToString() });
+    }
 }
 
 public sealed record PostSummaryResponse(
@@ -288,7 +311,8 @@ public sealed record PostDetailResponse(
     string Content,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    DateTime? PublishedAtUtc);
+    DateTime? PublishedAtUtc,
+    Guid AuthorId = default, long Revision = 1, bool CanEdit = false, string? AuthorName = null);
 
 public class CreatePostRequest
 {
@@ -310,7 +334,10 @@ public class CreatePostRequest
     public string? AccessCode { get; init; }
 }
 
-public sealed class UpdatePostRequest : CreatePostRequest;
+public sealed class UpdatePostRequest : CreatePostRequest
+{
+    [Range(1, long.MaxValue)] public long ExpectedRevision { get; init; } = 1;
+}
 
 public sealed class UnlockPostRequest
 {

@@ -4,6 +4,7 @@ public sealed class Post
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public long PostNumber { get; set; }
+    public long Revision { get; set; } = 1;
     public required string Title { get; set; }
     public string? Description { get; set; }
     public string Content { get; set; } = string.Empty;

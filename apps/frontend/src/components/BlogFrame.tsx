@@ -30,12 +30,17 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
           controller.signal,
         ),
         fetchCollection<PostSummary>(
-          "/api/posts",
+          "/api/posts/directory",
           "글 목록을 불러오지 못했습니다.",
           controller.signal,
         ),
       ])
-        .then(([nextCategories, nextPosts]) => {
+        .then(async ([nextCategories, nextPosts]) => {
+          const project = nextCategories.find(category => category.name === "프로젝트" || category.slug.toLowerCase() === "project");
+          if (project) {
+            const projectItems = await fetchCollection<PostSummary>(`/api/posts/directory?category=${encodeURIComponent(project.slug)}`, "프로젝트를 불러오지 못했습니다.", controller.signal);
+            nextPosts = [...new Map([...nextPosts, ...projectItems].map(post => [post.postNumber, post])).values()];
+          }
           if (!active) return;
           setCategories(nextCategories);
           setPosts(nextPosts);
@@ -175,7 +180,8 @@ async function fetchCollection<T>(url: string, fallback: string, signal: AbortSi
     signal,
   });
   if (!response.ok) throw new Error(await readProblem(response, fallback));
-  return (await response.json()) as T[];
+  const result = await response.json() as T[] | { items: T[] };
+  return Array.isArray(result) ? result : result.items;
 }
 
 function compareNewest(left: PostSummary, right: PostSummary) {
