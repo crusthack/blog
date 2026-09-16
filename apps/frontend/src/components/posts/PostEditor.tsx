@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { PostAssetManager } from "@/components/posts/PostAssetManager";
 import { postPath } from "@/lib/postPaths";
+import { insertMarkdown as applyMarkdown, markdownTools } from "@/lib/markdownEditing";
 import { type Category, type PostDetail, type PostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
@@ -26,6 +27,51 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const savingRef = useRef(false);
+  const leavingRef = useRef(false);
+  const [view, setView] = useState("split");
+  const [pendingLink, setPendingLink] = useState<string | null>(null);
+  const leaveDialogRef = useRef<HTMLDialogElement>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const snapshot = JSON.stringify([title, description, content, categoryId, visibility, accessCode]);
+  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(["", "", initialContent, "", "Public", ""]));
+  const dirty = !isLoading && !loadFailed && snapshot !== savedSnapshot;
+
+  useEffect(() => {
+    if (pendingLink) leaveDialogRef.current?.showModal();
+    else leaveDialogRef.current?.close();
+  }, [pendingLink]);
+
+  useEffect(() => {
+    if (!user?.isOwner) return;
+    function shortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (!isLoading && !loadFailed && !isDeleting && !savingRef.current) formRef.current?.requestSubmit();
+      }
+    }
+    function beforeUnload(event: BeforeUnloadEvent) {
+      if (dirty && !leavingRef.current) { event.preventDefault(); event.returnValue = ""; }
+    }
+    function followLink(event: MouseEvent) {
+      if (!dirty || leavingRef.current || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const link = (event.target as Element).closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+      const target = new URL(link.href);
+      if (target.origin === location.origin && target.pathname === location.pathname && target.search === location.search) return;
+      event.preventDefault(); event.stopPropagation();
+      setPendingLink(link.href);
+    }
+    window.addEventListener("keydown", shortcut);
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", followLink, true);
+    return () => {
+      window.removeEventListener("keydown", shortcut);
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", followLink, true);
+    };
+  }, [dirty, isLoading, loadFailed, isDeleting, user]);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -46,6 +92,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         return (await response.json()) as PostDetail;
       })
       .then((post) => {
+        if (controller.signal.aborted) return;
         setTitle(post.title);
         setDescription(post.description ?? "");
         setContent(post.content);
@@ -53,9 +100,11 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         setVisibility(post.visibility);
         setHasAccessCode(post.visibility === "CodeProtected");
         setAccessCode("");
+        setSavedSnapshot(JSON.stringify([post.title, post.description ?? "", post.content, post.categoryId ?? "", post.visibility, ""]));
       })
       .catch((reason: unknown) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
+        setLoadFailed(true);
         setError(reason instanceof Error ? reason.message : "글을 불러오지 못했습니다.");
       })
       .finally(() => {
@@ -83,6 +132,8 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (savingRef.current || isDeleting || loadFailed) return;
+    savingRef.current = true;
     setIsSaving(true);
     setError("");
     try {
@@ -97,25 +148,28 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
       });
       if (!response.ok) throw new Error(await readProblem(response, "글을 저장하지 못했습니다."));
       const saved = (await response.json()) as PostDetail;
+      leavingRef.current = true;
+      setSavedSnapshot(snapshot);
       router.push(postPath(saved));
       router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "글을 저장하지 못했습니다.");
     } finally {
+      savingRef.current = false;
       setIsSaving(false);
     }
   }
 
-  function insertMarkdown(before: string, after = "", placeholder = "텍스트") {
+  function insertMarkdown(tool: (typeof markdownTools)[number]) {
     const editor = editorRef.current;
     if (!editor) return;
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    const selected = content.slice(start, end) || placeholder;
-    setContent(`${content.slice(0, start)}${before}${selected}${after}${content.slice(end)}`);
+    const inserted = applyMarkdown(content, start, end, tool);
+    setContent(inserted.content);
     window.requestAnimationFrame(() => {
       editor.focus();
-      editor.setSelectionRange(start + before.length, start + before.length + selected.length);
+      editor.setSelectionRange(inserted.selectionStart, inserted.selectionEnd);
     });
   }
 
@@ -154,6 +208,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         credentials: "include",
       });
       if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
+      leavingRef.current = true;
       router.replace("/");
       router.refresh();
     } catch (reason) {
@@ -169,12 +224,24 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
 
   return (
     <main data-ui-page="admin" className="mx-auto min-h-[80vh] w-full max-w-[1600px] px-4 py-10 sm:px-6">
-      <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+      <dialog ref={leaveDialogRef} className="editor-leave-dialog" aria-labelledby="leave-title" onCancel={() => setPendingLink(null)}>
+        <h2 id="leave-title">저장하지 않은 변경 사항이 있습니다</h2>
+        <p>이동하면 작성 중인 변경 사항이 사라집니다.</p>
+        <div>
+          <button type="button" autoFocus onClick={() => setPendingLink(null)}>계속 작성</button>
+          <button type="button" onClick={() => {
+            if (!pendingLink) return;
+            leavingRef.current = true;
+            window.location.assign(pendingLink);
+          }}>저장하지 않고 이동</button>
+        </div>
+      </dialog>
+      <header className="editor-command-bar mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm font-black tracking-[0.16em] text-emerald-600">MARKDOWN EDITOR</p>
           <h1 className="mt-2 text-3xl font-black">{postNumber ? "글 편집" : "새 글 작성"}</h1>
           <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-            작성 화면과 미리보기를 함께 확인하며 글을 완성합니다.
+            {dirty ? "저장하지 않은 변경 사항이 있습니다." : "저장 버튼을 누르면 글에 반영됩니다."} · Ctrl/⌘+S
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -194,7 +261,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
             className="bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             type="submit"
             form="post-editor"
-            disabled={isSaving || isDeleting}
+            disabled={isSaving || isDeleting || loadFailed}
           >
             {isSaving ? "저장 중..." : postNumber ? "수정 저장" : visibility === "Private" ? "비공개로 저장" : "게시하기"}
           </button>
@@ -202,16 +269,23 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
       </header>
 
       {error ? (
-        <p data-ui="notice" className="mb-6 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
+        <p role="alert" data-ui="notice" className="editor-error bg-red-50 p-4 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
           {error}
         </p>
       ) : null}
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-6">
+      <div className="editor-view-controls" role="group" aria-label="편집 화면 모드">
+        {[["edit", "작성"], ["split", "나란히"], ["preview", "미리보기"]].map(([value, label]) =>
+          <button key={value} type="button" aria-pressed={view === value} onClick={() => setView(value)}>{label}</button>)}
+        <span>{content.length.toLocaleString("ko-KR")}자 · {content.split("\n").length}줄</span>
+      </div>
+      <div className="editor-workspace" data-view={view}>
+        <div className="editor-input-pane min-w-0 space-y-6" inert={isSaving || isDeleting || loadFailed}>
           <form
             data-ui="panel"
             id="post-editor"
+            ref={formRef}
+            onInvalidCapture={() => setView("split")}
             className="min-w-0 space-y-5 bg-white p-5 sm:p-6 dark:bg-[#252525]"
             onSubmit={handleSubmit}
           >
@@ -280,23 +354,20 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
             </select>
           </label>
           </div>
-          <label className="block">
-            <span className="mb-2 block text-sm font-bold">Markdown 본문</span>
+          <div className="block">
+            <label htmlFor="post-body" className="mb-2 block text-sm font-bold">Markdown 본문</label>
             <span
               className="mb-3 block border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50"
               role="toolbar"
               aria-label="Markdown 서식"
             >
               <span className="flex flex-wrap gap-2">
-                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("## ", "", "소제목")}>H2</button>
-                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("**", "**")}>굵게</button>
-                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("[", "](https://)", "링크 이름")}>링크</button>
-                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("- ", "", "목록")}>목록</button>
-                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("```\n", "\n```", "code")}>코드</button>
-                <button data-ui="action" className="border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-bold text-gray-700 transition hover:border-emerald-500 hover:text-emerald-700 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200" type="button" onClick={() => insertMarkdown("> ", "", "인용")}>인용</button>
+                {markdownTools.map((tool) => <button key={tool.label} data-ui="action" className="editor-markdown-tool"
+                  type="button" onClick={() => insertMarkdown(tool)}>{tool.label}</button>)}
               </span>
             </span>
             <textarea
+              id="post-body"
               data-ui="input"
               ref={editorRef}
               className="min-h-[520px] w-full resize-y border border-gray-300 bg-transparent px-4 py-3 font-mono text-sm leading-6 dark:border-gray-600"
@@ -305,7 +376,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
               required
               spellCheck={false}
             />
-          </label>
+          </div>
           </form>
 
           {postNumber ? (
@@ -321,7 +392,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
           )}
         </div>
 
-        <section data-ui="panel" className="post-view min-h-[500px] min-w-0 overflow-auto bg-white p-5 sm:p-7 dark:bg-[#252525] xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+        <section data-ui="panel" className="editor-preview-pane post-view min-h-[500px] min-w-0 overflow-auto bg-white p-5 sm:p-7 dark:bg-[#252525]">
           <p className="mb-5 text-sm font-black tracking-[0.16em] text-emerald-600">MARKDOWN PREVIEW</p>
           <header className="mb-6 border-b border-gray-200 pb-6 dark:border-gray-700">
             {categories.find((category) => category.id === categoryId) ? (

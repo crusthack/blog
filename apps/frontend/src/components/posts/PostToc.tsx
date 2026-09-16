@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { MarkdownHeading } from "@/lib/markdownHeadings";
+import { getVisibleHeadings, type MarkdownHeading } from "@/lib/markdownHeadings";
 
 export function PostToc({ headings }: { headings: MarkdownHeading[] }) {
   const [activeId, setActiveId] = useState("");
   const baseDepth = Math.min(...headings.map((heading) => heading.depth));
+  const visibleHeadings = getVisibleHeadings(headings, activeId);
 
   useEffect(() => {
     if (!headings.length) return;
@@ -40,14 +41,14 @@ export function PostToc({ headings }: { headings: MarkdownHeading[] }) {
   }, [headings]);
 
   return (
-    <details className="post-toc" open>
-      <summary>이 글의 목차</summary>
+    <section className="post-toc">
+      <h3 className="post-toc-title">목차</h3>
       {headings.length ? <nav aria-label="본문 목차">
-        <ol>{headings.map((heading) => <li key={heading.id} style={{ paddingInlineStart: `${(heading.depth - baseDepth) * 0.75}rem` }}>
+        <ul>{visibleHeadings.map((heading) => <li key={heading.id} style={{ paddingInlineStart: `${(heading.depth - baseDepth) * 16}px` }}>
           <a href={`#${encodeURIComponent(heading.id)}`} aria-current={activeId === heading.id ? "location" : undefined}
             onClick={() => setActiveId(heading.id)}>{heading.title}</a>
-        </li>)}</ol>
+        </li>)}</ul>
       </nav> : <p>본문에 목차로 표시할 제목이 없습니다.</p>}
-    </details>
+    </section>
   );
 }

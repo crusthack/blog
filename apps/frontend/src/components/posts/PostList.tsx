@@ -37,6 +37,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
   const [categoryId, setCategoryId] = useState("");
   const [visibility, setVisibility] = useState("");
   const [page, setPage] = useState(1);
+  const [sort, setSort] = useState("newest");
   const [deleting, setDeleting] = useState<number | null>(null);
 
   useEffect(() => {
@@ -72,7 +73,10 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
     if (selectedCategory === "uncategorized" ? post.categoryId !== null : selectedCategory && post.categoryId !== selectedCategory) return false;
     if (visibility && post.visibility !== visibility) return false;
     return !search || `${post.title}\n${post.description ?? ""}`.toLocaleLowerCase("ko-KR").includes(search.toLocaleLowerCase("ko-KR"));
-  });
+  }).sort((left, right) => sort === "oldest" ? left.postNumber - right.postNumber
+    : sort === "updated" ? Date.parse(right.updatedAtUtc) - Date.parse(left.updatedAtUtc) || right.postNumber - left.postNumber
+    : sort === "title" ? left.title.localeCompare(right.title, "ko") || right.postNumber - left.postNumber
+    : right.postNumber - left.postNumber);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visiblePosts = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -128,12 +132,18 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
             {Object.entries(visibilityLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </label> : null}
+        <label><span className="sr-only">글 정렬</span>
+          <select value={sort} onChange={(event) => { setSort(event.target.value); setPage(1); }}>
+            <option value="newest">최신 글순</option><option value="oldest">오래된 글순</option>
+            <option value="updated">최근 수정순</option><option value="title">제목순</option>
+          </select>
+        </label>
         <label className="board-search"><span className="sr-only">제목과 설명 검색</span>
           <input type="search" placeholder="제목·설명 검색" value={searchInput} maxLength={120} onChange={(event) => setSearchInput(event.target.value)} />
         </label>
         <button type="submit">검색</button>
-        {search || categoryId || visibility ? <button type="button" onClick={() => {
-          setSearch(""); setSearchInput(""); setCategoryId(""); setVisibility(""); setPage(1);
+        {search || categoryId || visibility || sort !== "newest" ? <button type="button" onClick={() => {
+          setSearch(""); setSearchInput(""); setCategoryId(""); setVisibility(""); setPage(1); setSort("newest");
         }}>초기화</button> : null}
       </form>
       {actionError ? <p className="board-notice board-error" role="alert">{actionError}</p> : null}

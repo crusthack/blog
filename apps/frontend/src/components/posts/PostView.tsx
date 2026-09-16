@@ -10,6 +10,7 @@ import { type PostDetail, readProblem, visibilityLabels } from "@/lib/contracts"
 import { postPath } from "@/lib/postPaths";
 import { getMarkdownHeadings } from "@/lib/markdownHeadings";
 import { PostToc } from "@/components/posts/PostToc";
+import { PostReadingActions } from "@/components/posts/PostReadingActions";
 
 export function PostView({ postNumber }: { postNumber: string }) {
   const { user, isLoading } = useAuth();
@@ -154,7 +155,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
               </Link>
             ) : null}
           </div>
-          <h1 className="text-4xl font-black tracking-tight md:text-5xl">{post.title}</h1>
+          <h1 id="post-title" tabIndex={-1} className="text-4xl font-black tracking-tight md:text-5xl">{post.title}</h1>
           {post.description ? (
             <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>
           ) : null}
@@ -168,6 +169,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
             <MarkdownContent source={post.content} />
           </div>
         </div>
+        <PostReadingActions categorySlug={post.categorySlug} />
       </article>
     </BlogFrame>
   );

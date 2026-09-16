@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
-import { getMarkdownHeadings, remarkHeadingIds } from '../../apps/frontend/src/lib/markdownHeadings.ts';
+import { getMarkdownHeadings, getVisibleHeadings, remarkHeadingIds } from '../../apps/frontend/src/lib/markdownHeadings.ts';
 import { postPath } from '../../apps/frontend/src/lib/postPaths.ts';
 
 test('category paths work for existing posts, moved posts, and uncategorized posts', () => {
@@ -26,4 +26,15 @@ test('outline handles Korean, formatting, setext, duplicates, and excludes fence
 test('no headings and punctuation-only headings are supported', () => {
   assert.deepEqual(getMarkdownHeadings('A paragraph with `inline code`.'), []);
   assert.deepEqual(getMarkdownHeadings('# !!!\n\n# ???').map(({ id }) => id), ['heading-section', 'heading-section-1']);
+});
+
+test('TOC expands only the active branch and keeps every root available', () => {
+  const headings = getMarkdownHeadings('## A\n### A1\n##### A1a\n### A2\n## B\n### B1\n#### B1a');
+  const visible = (title) => getVisibleHeadings(headings, headings.find(h => h.title === title)?.id ?? '').map(h => h.title);
+  assert.deepEqual(headings.map(h => h.parentId), [null, headings[0].id, headings[1].id, headings[0].id, null, headings[4].id, headings[5].id]);
+  assert.deepEqual(visible('A'), ['A', 'A1', 'A2', 'B']);
+  assert.deepEqual(visible('A1a'), ['A', 'A1', 'A1a', 'A2', 'B']);
+  assert.deepEqual(visible('B1'), ['A', 'B', 'B1', 'B1a']);
+  assert.deepEqual(visible('missing'), visible('A'));
+  assert.deepEqual(getVisibleHeadings([], ''), []);
 });
