@@ -51,4 +51,11 @@ public sealed class PostAssetStorage
 
     public void DeleteIfExists(string storageFileName) =>
         File.Delete(GetPath(storageFileName));
+
+    public IReadOnlyList<StoredAssetInfo> Inventory() => !Directory.Exists(rootPath) ? [] :
+        new DirectoryInfo(rootPath).EnumerateFiles()
+            .Where(file => !file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            .Select(file => new StoredAssetInfo(file.Name, file.Length, file.LastWriteTimeUtc)).ToArray();
 }
+
+public sealed record StoredAssetInfo(string Name, long Size, DateTime ModifiedAtUtc);

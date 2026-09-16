@@ -90,7 +90,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
   }
 
   async function deletePost(post: PostSummary) {
-    if (deleting !== null || !window.confirm(`“${post.title}” 글과 첨부 파일을 삭제할까요? 삭제 후에는 복구할 수 없습니다.`)) return;
+    if (deleting !== null || !window.confirm(`“${post.title}” 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관되며 복원할 수 있습니다.`)) return;
     setDeleting(post.postNumber);
     setActionError("");
     setMessage("");
@@ -98,7 +98,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
       const response = await fetch(`/api/posts/${post.postNumber}`, { method: "DELETE", credentials: "include" });
       if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
       setPosts((previous) => previous.filter((item) => item.postNumber !== post.postNumber));
-      setMessage(`“${post.title}” 글을 삭제했습니다.`);
+      setMessage(`“${post.title}” 글을 휴지통으로 옮겼습니다.`);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "글을 삭제하지 못했습니다.");
@@ -115,6 +115,7 @@ function PostDirectory({ categorySlug, manage, isOwner }: Props & { isOwner: boo
           <p>{manage ? "공개·비공개·코드 보호 글을 검색하고 관리합니다." : activeCategory?.description ?? "최신 글부터 순서대로 확인하세요."}</p>
         </div>
         <div className="board-heading-actions">
+          {manage ? <><Link href="/posts/trash">휴지통</Link><Link href="/storage">첨부 파일 점검</Link></> : null}
           {categorySlug || manage ? <Link href="/posts">전체 글 보기</Link> : null}
           {isOwner ? <Link className="board-primary" href="/write">글쓰기</Link> : null}
         </div>

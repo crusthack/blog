@@ -175,6 +175,10 @@ docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d
 
 편집기와 읽기 화면의 개선 사항은 [사용성 개선 기록](docs/PRODUCT_IMPROVEMENTS.md)에 정리되어 있습니다.
 
+슬라이드뷰, 메모, 드로잉, 저장 정책과 단축키는 [슬라이드 작업 공간](docs/SLIDE_WORKSPACE.md)을 참고합니다.
+
+휴지통·복원, 슬라이드 서버 저장과 첨부 파일 점검의 구현 범위 및 운영 반영은 [로드맵 반영 현황](docs/ROADMAP_PROGRESS.md)을 참고합니다.
+
 ```bash
 npm run lint:frontend
 npm run test:frontend

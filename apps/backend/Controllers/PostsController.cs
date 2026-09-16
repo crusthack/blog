@@ -112,7 +112,10 @@ public sealed class PostsController(
                 return BadRequest(new ProblemDetails { Title = "존재하지 않는 카테고리입니다." });
         }
 
-        var postNumber = (await db.Posts.MaxAsync(post => (long?)post.PostNumber) ?? 0) + 1;
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        await db.PostCounters.Where(counter => counter.Id == 1)
+            .ExecuteUpdateAsync(update => update.SetProperty(counter => counter.LastNumber, counter => counter.LastNumber + 1));
+        var postNumber = await db.PostCounters.Where(counter => counter.Id == 1).Select(counter => counter.LastNumber).SingleAsync();
         var now = DateTime.UtcNow;
         var post = new Post
         {
@@ -132,6 +135,7 @@ public sealed class PostsController(
         if (accessError is not null) return BadRequest(new ProblemDetails { Title = accessError });
         db.Posts.Add(post);
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return Created($"/api/posts/{post.PostNumber}", ToDetail(post));
     }
 
@@ -170,16 +174,50 @@ public sealed class PostsController(
     [HttpDelete("{postNumber:long}")]
     public async Task<IActionResult> Delete(long postNumber)
     {
-        var post = await db.Posts
+        var post = await db.Posts.SingleOrDefaultAsync(post => post.PostNumber == postNumber);
+        if (post is null) return NotFound();
+        post.DeletedAtUtc = DateTime.UtcNow;
+        post.AccessCodeVersion = Guid.NewGuid();
+        await db.SaveChangesAsync();
+        logger.LogInformation("Post {PostNumber} moved to trash by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
+        return NoContent();
+    }
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpGet("trash")]
+    public async Task<IActionResult> Trash() => Ok(await db.Posts.IgnoreQueryFilters().AsNoTracking()
+        .Where(post => post.DeletedAtUtc != null).OrderByDescending(post => post.DeletedAtUtc)
+        .Select(post => new { post.PostNumber, post.Title, post.Visibility, DeletedAtUtc = DateTime.SpecifyKind(post.DeletedAtUtc!.Value, DateTimeKind.Utc), AssetCount = post.Assets.Count })
+        .ToListAsync());
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpPost("{postNumber:long}/restore")]
+    public async Task<IActionResult> Restore(long postNumber)
+    {
+        // Restoring never republishes content without an explicit visibility choice.
+        var restored = await db.Posts.IgnoreQueryFilters().Where(post => post.PostNumber == postNumber && post.DeletedAtUtc != null)
+            .ExecuteUpdateAsync(update => update.SetProperty(post => post.DeletedAtUtc, (DateTime?)null)
+                .SetProperty(post => post.Visibility, PostVisibility.Private).SetProperty(post => post.UpdatedAtUtc, DateTime.UtcNow));
+        if (restored == 0) return NotFound();
+        logger.LogInformation("Post {PostNumber} restored privately by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
+        return NoContent();
+    }
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpDelete("{postNumber:long}/permanent")]
+    public async Task<IActionResult> PermanentlyDelete(long postNumber)
+    {
+        var post = await db.Posts.IgnoreQueryFilters()
             .Include(candidate => candidate.Assets)
-            .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber);
+            .SingleOrDefaultAsync(candidate => candidate.PostNumber == postNumber && candidate.DeletedAtUtc != null);
         if (post is null) return NotFound();
 
         var storageFileNames = post.Assets
             .Select(asset => asset.StorageFileName)
             .ToArray();
-        db.Posts.Remove(post);
-        await db.SaveChangesAsync();
+        var removed = await db.Posts.IgnoreQueryFilters().Where(candidate => candidate.Id == post.Id && candidate.DeletedAtUtc != null).ExecuteDeleteAsync();
+        if (removed == 0) return NotFound();
+        logger.LogInformation("Post {PostNumber} permanently deleted by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
 
         foreach (var storageFileName in storageFileNames)
         {

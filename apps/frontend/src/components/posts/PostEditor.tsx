@@ -198,7 +198,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
 
   async function deletePost() {
     if (!postNumber || isSaving || isDeleting) return;
-    if (!window.confirm("이 글을 완전히 삭제할까요? 삭제한 글은 복구할 수 없습니다.")) return;
+    if (!window.confirm("이 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관되며 복원할 수 있습니다.")) return;
 
     setIsDeleting(true);
     setError("");
@@ -253,7 +253,7 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
               onClick={() => void deletePost()}
               type="button"
             >
-              {isDeleting ? "삭제 중..." : "글 삭제"}
+              {isDeleting ? "이동 중..." : "휴지통으로"}
             </button>
           ) : null}
           <button

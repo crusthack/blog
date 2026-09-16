@@ -11,14 +11,17 @@ import { postPath } from "@/lib/postPaths";
 import { getMarkdownHeadings } from "@/lib/markdownHeadings";
 import { PostToc } from "@/components/posts/PostToc";
 import { PostReadingActions } from "@/components/posts/PostReadingActions";
+import dynamic from "next/dynamic";
 
-export function PostView({ postNumber }: { postNumber: string }) {
+const SlideWorkspace = dynamic(() => import("@/components/slides/SlideWorkspace"), { loading: () => <p className="p-10">슬라이드를 준비하고 있습니다.</p> });
+
+export function PostView({ postNumber, slideMode = false }: { postNumber: string; slideMode?: boolean }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return <main className="p-10">글을 불러오고 있습니다.</main>;
-  return <PostContent key={`${postNumber}:${user?.id ?? "visitor"}`} postNumber={postNumber} />;
+  return <PostContent key={`${postNumber}:${user?.id ?? "visitor"}:${slideMode}`} postNumber={postNumber} slideMode={slideMode} />;
 }
 
-function PostContent({ postNumber }: { postNumber: string }) {
+function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode: boolean }) {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [post, setPost] = useState<PostDetail | null>(null);
@@ -35,7 +38,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
     const controller = new AbortController();
     function normalizePostPath(data: { postNumber: number; categorySlug: string | null }) {
       if (controller.signal.aborted) return;
-      const path = postPath(data);
+      const path = postPath(data) + (slideMode ? "/slides" : "");
       if (window.location.pathname !== path) {
         router.replace(`${path}${window.location.search}${window.location.hash}`, { scroll: false });
       }
@@ -68,7 +71,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
         setError(reason instanceof Error ? reason.message : "글을 불러오지 못했습니다.");
       });
     return () => controller.abort();
-  }, [isAuthLoading, postNumber, reload, router]);
+  }, [isAuthLoading, postNumber, reload, router, slideMode]);
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -128,6 +131,8 @@ function PostContent({ postNumber }: { postNumber: string }) {
     );
   }
 
+  if (slideMode) return <SlideWorkspace post={post} userId={user?.id ?? null} />;
+
   const readingMinutes = Math.max(1, Math.ceil(post.content.trim().split(/\s+/).length / 250));
 
   return (
@@ -145,6 +150,7 @@ function PostContent({ postNumber }: { postNumber: string }) {
               </Link>
             ) : null}
             <span className="text-gray-500">약 {readingMinutes}분</span>
+            <Link href={`${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
             {user?.isOwner ? (
               <Link
                 data-ui="action"

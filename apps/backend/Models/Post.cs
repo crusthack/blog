@@ -17,6 +17,7 @@ public sealed class Post
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? PublishedAtUtc { get; set; }
+    public DateTime? DeletedAtUtc { get; set; }
     public ICollection<PostAsset> Assets { get; set; } = [];
 }
 

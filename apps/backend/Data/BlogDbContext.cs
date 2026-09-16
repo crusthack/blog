@@ -13,6 +13,8 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
     public DbSet<Post> Posts => Set<Post>();
     public DbSet<PostAsset> PostAssets => Set<PostAsset>();
     public DbSet<SiteSetting> SiteSettings => Set<SiteSetting>();
+    public DbSet<SlideWorkspace> SlideWorkspaces => Set<SlideWorkspace>();
+    public DbSet<PostCounter> PostCounters => Set<PostCounter>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -38,6 +40,7 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
         builder.Entity<Post>(entity =>
         {
             entity.HasKey(post => post.Id);
+            entity.HasQueryFilter(post => post.DeletedAtUtc == null);
             entity.HasIndex(post => post.PostNumber).IsUnique();
             entity.Property(post => post.Title).HasMaxLength(240);
             entity.Property(post => post.Description).HasMaxLength(500);
@@ -82,6 +85,22 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
             entity.HasIndex(setting => setting.Key).IsUnique();
             entity.Property(setting => setting.Key).HasMaxLength(128);
             entity.Property(setting => setting.Value).HasMaxLength(65_536);
+        });
+
+        builder.Entity<PostCounter>(entity =>
+        {
+            entity.HasKey(counter => counter.Id);
+            entity.Property(counter => counter.Id).ValueGeneratedNever();
+        });
+        builder.Entity<SlideWorkspace>(entity =>
+        {
+            entity.HasKey(workspace => workspace.Id);
+            entity.HasIndex(workspace => new { workspace.UserId, workspace.PostId, workspace.SourceHash, workspace.Mode }).IsUnique();
+            entity.Property(workspace => workspace.SourceHash).HasMaxLength(64);
+            entity.Property(workspace => workspace.Mode).HasMaxLength(8);
+            entity.Property(workspace => workspace.Revision).IsConcurrencyToken();
+            entity.HasOne<ApplicationUser>().WithMany().HasForeignKey(workspace => workspace.UserId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<Post>().WithMany().HasForeignKey(workspace => workspace.PostId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -13,12 +13,13 @@ public sealed class PostAccessService(IDataProtectionProvider protection, IWebHo
     private static readonly TimeSpan Lifetime = TimeSpan.FromHours(12);
 
     public static bool IsListed(Post post, HttpContext context) =>
-        context.User.IsInRole(Roles.Owner) ||
+        post.DeletedAtUtc == null && (context.User.IsInRole(Roles.Owner) ||
         post.Category is not { IsVisible: false } &&
-        post.Visibility is PostVisibility.Public or PostVisibility.CodeProtected;
+        post.Visibility is PostVisibility.Public or PostVisibility.CodeProtected);
 
     public bool CanRead(Post post, HttpContext context)
     {
+        if (post.DeletedAtUtc != null) return false;
         if (context.User.IsInRole(Roles.Owner)) return true;
         if (!IsListed(post, context)) return false;
         if (post.Visibility == PostVisibility.Public) return true;

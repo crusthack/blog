@@ -116,8 +116,10 @@ public sealed class PostAssetFlowTests
         Assert.Equal(
             HttpStatusCode.NoContent,
             (await owner.DeleteAsync($"/api/posts/{post.PostNumber}")).StatusCode);
-        Assert.Empty(Directory.EnumerateFiles(factory.AssetStoragePath));
+        Assert.Equal(2, Directory.EnumerateFiles(factory.AssetStoragePath).Count());
         Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(jpeg.Url)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/posts/{post.PostNumber}/permanent")).StatusCode);
+        Assert.Empty(Directory.EnumerateFiles(factory.AssetStoragePath));
     }
 
     [Fact]
