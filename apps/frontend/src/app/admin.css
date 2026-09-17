@@ -37,3 +37,19 @@
   .admin-overview-columns { grid-template-columns: minmax(0,1fr); }
   .admin-metric { padding: .8rem; }
 }
+
+.drive-toolbar, .drive-row-actions, .drive-usage { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: .75rem; }
+.admin-drive button, .drive-row-actions a { border: 1px solid var(--border-soft); padding: .4rem .65rem; font-size: .8rem; }
+.admin-drive button[aria-pressed="true"] { color: var(--accent-strong); border-color: var(--accent-strong); }
+.admin-drive button:disabled { opacity: .5; cursor: not-allowed; }
+.drive-breadcrumbs { overflow-wrap: anywhere; margin-block: 1rem; }
+.drive-breadcrumbs button { border: 0; text-decoration: underline; }
+.drive-edit { border: 1px solid var(--border-soft); padding: 1rem; margin-block: 1rem; }
+.drive-edit h3 { font-weight: bold; }
+.drive-edit label { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: .75rem; align-items: center; }
+.drive-edit input, .drive-edit select { max-width: 100%; flex: 1; min-width: 10rem; border: 1px solid var(--border-soft); background: var(--surface); color: var(--foreground); padding: .5rem; }
+.drive-table { min-width: 40rem; }
+.drive-table td:first-child { overflow-wrap: anywhere; }
+.drive-table th:first-child { width: 35%; }
+.drive-table td { font-size: .8rem; }
+.drive-usage progress { accent-color: var(--accent-strong); max-width: 100%; }

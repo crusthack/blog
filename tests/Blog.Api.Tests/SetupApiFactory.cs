@@ -35,6 +35,7 @@ public sealed class SetupApiFactory : WebApplicationFactory<Program>
             services.AddDbContext<BlogDbContext>(options =>
                 options.UseSqlite($"Data Source={databasePath}"));
             services.PostConfigure<BootstrapOptions>(options => options.TokenFile = tokenPath);
+            services.PostConfigure<DriveStorageOptions>(options => options.StoragePath = Path.Combine(tempDirectory, "drive"));
             services.PostConfigure<PostAssetStorageOptions>(
                 options => options.StoragePath = AssetStoragePath);
         });

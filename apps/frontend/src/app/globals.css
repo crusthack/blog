@@ -1570,6 +1570,7 @@ summary {
   .markdown-body pre, .markdown-body table { overflow: visible; max-width: 100%; }
   .markdown-body pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 }
+html:has(.post-toc) { scroll-behavior: auto; }
 .post-toc { min-width: 0; max-height: 80vh; overflow-y: auto; scrollbar-width: thin; --toc-title: #111827; --toc-text: #374151; --toc-active: #0969da; }
 .legacy-blog-sidebar .post-toc-title { margin: 0 0 1rem; color: var(--toc-title); font-size: 1rem; font-weight: 700; }
 .post-toc ul { margin: 0; padding: 0; list-style: none; }

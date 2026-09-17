@@ -123,6 +123,8 @@ builder.Services.ConfigureApplicationCookie(options =>
 builder.Services.AddScoped<BootstrapTokenProvider>();
 builder.Services.AddScoped<OwnerSetupService>();
 builder.Services.AddSingleton<PostAssetStorage>();
+builder.Services.Configure<DriveStorageOptions>(builder.Configuration.GetSection("DriveStorage"));
+builder.Services.AddSingleton<DriveStorage>();
 builder.Services.AddScoped<PostAccessService>();
 
 builder.Services.AddRateLimiter(options =>

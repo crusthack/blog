@@ -8,6 +8,7 @@ namespace Blog.Api.Data;
 public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
     : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options)
 {
+    public DbSet<DriveEntry> DriveEntries => Set<DriveEntry>();
     public DbSet<SiteInstallation> SiteInstallations => Set<SiteInstallation>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<Post> Posts => Set<Post>();
@@ -42,6 +43,14 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
             });
         });
 
+        builder.Entity<DriveEntry>(entity =>
+        {
+            entity.Property(item => item.Name).HasMaxLength(200);
+            entity.Property(item => item.NameKey).HasMaxLength(200);
+            entity.Property(item => item.Revision).IsConcurrencyToken();
+            entity.HasIndex(item => new { item.ParentId, item.NameKey }).IsUnique().HasFilter("DeletedAtUtc IS NULL");
+            entity.HasIndex(item => item.DeletedAtUtc);
+        });
         builder.Entity<Post>(entity =>
         {
             entity.HasKey(post => post.Id);

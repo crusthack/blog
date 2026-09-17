@@ -37,6 +37,95 @@ public sealed class CommunityFlowTests
     }
     private static string Root(PostDetailResponse post) => $"/api/posts/{post.PostNumber}/community";
 
+    private static async Task<HttpResponseMessage> UploadDrive(HttpClient client, Guid parent, string name = "private.txt")
+    {
+        using var body = new MultipartFormDataContent();
+        body.Add(new StringContent(parent.ToString()), "parentId");
+        body.Add(new ByteArrayContent("private content"u8.ToArray()), "file", name);
+        return await client.PostAsync("/api/admin/drive/files", body);
+    }
+
+    [Fact]
+    public async Task Drive_enforces_capacity_including_trash_and_rejects_path_names()
+    {
+        using var factory = new SetupApiFactory(); using var owner = await Owner(factory);
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadDrive(owner, Guid.Empty, "../escape.txt")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadDrive(owner, Guid.NewGuid())).StatusCode);
+        using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+        db.DriveEntries.Add(new Blog.Api.Models.DriveEntry { Name = "Full", NameKey = "FULL", Size = Blog.Api.Storage.DriveStorage.Capacity, DeletedAtUtc = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadDrive(owner, Guid.Empty)).StatusCode);
+        Assert.Equal(1, await db.DriveEntries.CountAsync());
+        using var body = new MultipartFormDataContent();
+        body.Add(new ByteArrayContent(new byte[25 * 1024 * 1024 + 1]), "file", "large.bin");
+        var oversized = await owner.PostAsync("/api/admin/drive/files", body);
+        Assert.Contains(oversized.StatusCode, new[] { HttpStatusCode.BadRequest, HttpStatusCode.RequestEntityTooLarge });
+    }
+
+    [Fact]
+    public async Task Drive_is_owner_only_including_direct_downloads_and_mutations()
+    {
+        using var factory = new SetupApiFactory(); using var owner = await Owner(factory); using var member = await Member(factory, owner); using var visitor = Client(factory);
+        var uploaded = await UploadDrive(owner, Guid.Empty);
+        Assert.Equal(HttpStatusCode.OK, uploaded.StatusCode);
+        var entry = (await uploaded.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        foreach (var client in new[] { visitor, member })
+        {
+            var expected = client == visitor ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden;
+            Assert.Equal(expected, (await client.GetAsync("/api/admin/drive")).StatusCode);
+            Assert.Equal(expected, (await client.GetAsync($"/api/admin/drive/{entry}/download")).StatusCode);
+            Assert.Equal(expected, (await UploadDrive(client, Guid.Empty)).StatusCode);
+            Assert.Equal(expected, (await client.PostAsJsonAsync("/api/admin/drive/folders", new { name = "Folder" })).StatusCode);
+            Assert.Equal(expected, (await client.PutAsJsonAsync($"/api/admin/drive/{entry}", new { name = "changed", expectedRevision = 1 })).StatusCode);
+            Assert.Equal(expected, (await client.DeleteAsync($"/api/admin/drive/{entry}?revision=1")).StatusCode);
+            Assert.Equal(expected, (await client.PostAsJsonAsync($"/api/admin/drive/{entry}/restore", new { name = "restored", expectedRevision = 2 })).StatusCode);
+        }
+        var download = await owner.GetAsync($"/api/admin/drive/{entry}/download");
+        Assert.Equal("private content", await download.Content.ReadAsStringAsync());
+        Assert.Equal("attachment", download.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("application/octet-stream", download.Content.Headers.ContentType?.MediaType);
+        Assert.True(download.Headers.CacheControl?.NoStore);
+        Assert.Contains("nosniff", download.Headers.GetValues("X-Content-Type-Options"));
+    }
+
+    [Fact]
+    public async Task Drive_preserves_tree_and_restores_files_without_overwriting_names()
+    {
+        using var factory = new SetupApiFactory(); using var owner = await Owner(factory);
+        async Task<Guid> Folder(string name, Guid parent)
+        {
+            var response = await owner.PostAsJsonAsync("/api/admin/drive/folders", new { name, parentId = parent });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        }
+        var parent = await Folder("Documents", Guid.Empty); var child = await Folder("Nested", parent);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync($"/api/admin/drive/{parent}", new { name = "Documents", parentId = child, expectedRevision = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync("/api/admin/drive/folders", new { name = "../escape" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync("/api/admin/drive/folders", new { name = "documents" })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.DeleteAsync($"/api/admin/drive/{parent}?revision=1")).StatusCode);
+        var upload = await UploadDrive(owner, child); Assert.Equal(HttpStatusCode.OK, upload.StatusCode);
+        var id = (await upload.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadDrive(owner, id, "nested.txt")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await UploadDrive(owner, child)).StatusCode);
+        var listing = await owner.GetFromJsonAsync<JsonElement>($"/api/admin/drive?parentId={child}&query=private");
+        Assert.Equal(1, listing.GetProperty("total").GetInt32());
+        Assert.Equal(15, listing.GetProperty("usedBytes").GetInt64());
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync($"/api/admin/drive/{id}", new { name = "renamed.txt", parentId = parent, expectedRevision = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await owner.PutAsJsonAsync($"/api/admin/drive/{id}", new { name = "stale.txt", parentId = parent, expectedRevision = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/admin/drive/{id}?revision=2")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/admin/drive/{id}/download")).StatusCode);
+        Assert.Equal(1, (await owner.GetFromJsonAsync<JsonElement>("/api/admin/drive?trash=true")).GetProperty("total").GetInt32());
+        await UploadDrive(owner, Guid.Empty, "renamed.txt");
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PostAsJsonAsync($"/api/admin/drive/{id}/restore", new { name = "renamed.txt", expectedRevision = 3 })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync($"/api/admin/drive/{id}/restore", new { name = "restored.txt", expectedRevision = 3 })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync($"/api/admin/drive/{id}/download")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/admin/drive/{id}?revision=4")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/admin/drive/{id}?revision=5&permanent=true")).StatusCode);
+        using var scope = factory.Services.CreateScope();
+        Assert.False(File.Exists(scope.ServiceProvider.GetRequiredService<Blog.Api.Storage.DriveStorage>().GetPath(id)));
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.PostAsJsonAsync($"/api/admin/drive/{id}/restore", new { name = "gone", expectedRevision = 5 })).StatusCode);
+    }
+
     [Fact]
     public async Task Directory_sorts_by_actual_dates_and_supports_both_directions()
     {

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AdminDrive } from "./AdminDrive";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { PostList } from "@/components/posts/PostList";
@@ -16,7 +17,7 @@ const sections = [
   ["overview", "전체 현황"], ["posts", "게시글"], ["categories", "카테고리"],
   ["reports", "신고"], ["members", "회원"], ["invites", "초대"],
   ["settings", "사이트 설정"], ["trash", "휴지통"], ["storage", "첨부 파일"],
-  ["audit", "감사 기록"], ["health", "서비스 상태"],
+  ["drive", "관리자 클라우드"], ["audit", "감사 기록"], ["health", "서비스 상태"],
 ] as const;
 type Section = (typeof sections)[number][0];
 type Overview = {
@@ -68,6 +69,7 @@ function Dashboard() {
           : id === "categories" ? <CategoryManager embedded />
           : id === "settings" ? <SiteSettingsManager embedded />
           : id === "trash" || id === "storage" ? <OwnerMaintenance tab={id} embedded />
+          : id === "drive" ? <AdminDrive />
           : id === "health" ? <HealthDashboard embedded />
           : <CommunitySection tab={id} />}
       </div>)}</div>
@@ -119,4 +121,4 @@ function OverviewPanel({ active }: { active: boolean }) {
     </>}
   </section>;
 }
-const activityLabels: Record<string, string> = { "post.create": "글 게시", "post.update": "글 수정", "post.trash": "휴지통 이동", "post.restore": "글 복원", "post.purge": "글 영구 삭제", "member.join": "회원 가입", "member.suspend": "계정 정지", "member.restore": "계정 정지 해제", "invite.create": "초대 발급", "invite.revoke": "초대 회수", "comment.delete": "댓글 삭제", "report.hide": "신고 콘텐츠 조치", "report.resolve": "신고 처리" };
+const activityLabels: Record<string, string> = { "drive.folder": "폴더 생성", "drive.upload": "파일 업로드", "drive.update": "파일·폴더 변경", "drive.trash": "파일 휴지통 이동", "drive.restore": "파일·폴더 복원", "drive.purge": "파일·폴더 영구 삭제", "post.create": "글 게시", "post.update": "글 수정", "post.trash": "휴지통 이동", "post.restore": "글 복원", "post.purge": "글 영구 삭제", "member.join": "회원 가입", "member.suspend": "계정 정지", "member.restore": "계정 정지 해제", "invite.create": "초대 발급", "invite.revoke": "초대 회수", "comment.delete": "댓글 삭제", "report.hide": "신고 콘텐츠 조치", "report.resolve": "신고 처리" };
