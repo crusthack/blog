@@ -142,3 +142,7 @@ sudo docker compose -f compose.production.yaml -f compose.cloudflare.yaml up -d 
 
 GitHub secrets와 EC2 authorized key를 정기적으로 검토하고 사용하지 않는 키는
 제거한다.
+
+## 헬스체크의 최근 업데이트
+
+CD 패키징 시 배포 대상 커밋의 committer 시각을 `apps/backend/release-info.json`에 기록해 릴리스와 함께 배포합니다. `/api/health`의 `release.updatedAtUtc`와 헬스체크 페이지의 최근 업데이트에 사용하며, 표시 시간대는 Asia/Seoul입니다. 상태 조회 시각(`checkedAtUtc`) 및 서버 재시작 시각과 구분합니다. 재배포·롤백 시에도 해당 소스 커밋의 시각을 유지합니다. 메타데이터가 없는 로컬·수동 빌드는 `배포 정보 없음`으로 표시됩니다.

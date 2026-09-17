@@ -1,5 +1,8 @@
 'use client';
 
+import { GameJumpLink, GameNavigation } from '@/components/games/GameNavigation';
+import { SurvivorGame } from '@/components/games/SurvivorGame';
+
 import { memo, useEffect, useRef, useState, useCallback } from 'react';
 
 const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) => {
@@ -232,7 +235,8 @@ const MinesweeperGame = memo(function MinesweeperGame() {
   const [board, setBoard] = useState<MineCell[][]>(() => createEmptyMineBoard());
   const [isStarted, setIsStarted] = useState(false);
   const [status, setStatus] = useState<'playing' | 'won' | 'lost'>('playing');
-  const [flags, setFlags] = useState(0);
+  const flags = board.flat().filter(cell => cell.isFlagged).length;
+  const [flagMode, setFlagMode] = useState(false);
   const [pressedCell, setPressedCell] = useState<[number, number] | null>(null);
 
   const reset = () => {
@@ -240,7 +244,6 @@ const MinesweeperGame = memo(function MinesweeperGame() {
     setBoard(createEmptyMineBoard());
     setIsStarted(false);
     setStatus('playing');
-    setFlags(0);
     setPressedCell(null);
   };
 
@@ -287,7 +290,8 @@ const MinesweeperGame = memo(function MinesweeperGame() {
     if (status !== 'playing') return;
     setPressedCell(null);
 
-    const activeBoard = isStarted ? board : createMineBoard(row, col);
+    if (board[row][col].isFlagged) return;
+    const activeBoard = isStarted ? board : createMineBoard(row, col).map((cells, r) => cells.map((cell, c) => ({ ...cell, isFlagged: board[r][c].isFlagged })));
     const cell = activeBoard[row][col];
     if (cell.isFlagged) return;
 
@@ -343,19 +347,11 @@ const MinesweeperGame = memo(function MinesweeperGame() {
   const toggleFlag = (row: number, col: number) => {
     if (status !== 'playing') return;
 
-    setBoard((prev) => {
-      const cell = prev[row][col];
-      const currentFlags = prev.flat().filter((item) => item.isFlagged).length;
-      if (cell.isRevealed || (!cell.isFlagged && currentFlags >= MINE_COUNT)) return prev;
-
-      setPressedCell(null);
-
-      const next = prev.map((r) => r.map((c) => ({ ...c })));
-      next[row][col].isFlagged = !next[row][col].isFlagged;
-      setFlags(currentFlags + (next[row][col].isFlagged ? 1 : -1));
-      playGameSound('flag');
-      return next;
-    });
+    const cell = board[row][col];
+    if (cell.isRevealed || (!cell.isFlagged && flags >= MINE_COUNT)) return;
+    const next = board.map(cells => cells.map(item => ({ ...item })));
+    next[row][col].isFlagged = !next[row][col].isFlagged;
+    setPressedCell(null); setBoard(next); playGameSound('flag');
   };
 
   const isPressedPreviewCell = (row: number, col: number) => {
@@ -383,7 +379,7 @@ const MinesweeperGame = memo(function MinesweeperGame() {
     <section className="w-full max-w-6xl rounded-[2rem] border border-slate-800 bg-slate-950 p-6 shadow-2xl">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <h2 className="text-3xl font-black tracking-tight text-slate-100">MINESWEEPER</h2>
+          <h2 className="text-3xl font-black tracking-tight text-slate-100"><GameJumpLink target="game-mines">MINESWEEPER</GameJumpLink></h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-400">
             Reveal every safe cell. Left click opens a cell, right click places a flag. The first click is safe.
           </p>
@@ -411,11 +407,13 @@ const MinesweeperGame = memo(function MinesweeperGame() {
           >
             NEW FIELD
           </button>
+          <button type="button" aria-pressed={flagMode} className="border border-slate-500 px-4 py-3 text-slate-100" onClick={() => setFlagMode(!flagMode)}>{flagMode ? "⚑ 깃발 모드" : "칸 열기 모드"}</button>
         </div>
 
         <div
           className="w-full overflow-x-auto rounded-xl border border-slate-800 bg-black/40 p-2"
           tabIndex={0}
+          id="game-mines"
           data-game-keys="ignore"
           aria-label="Minesweeper board. Scroll horizontally on a small screen."
         >
@@ -438,7 +436,7 @@ const MinesweeperGame = memo(function MinesweeperGame() {
                   <button
                     type="button"
                     key={`${rowIndex}-${colIndex}`}
-                    onClick={() => revealCell(rowIndex, colIndex)}
+                    onClick={() => flagMode ? toggleFlag(rowIndex, colIndex) : revealCell(rowIndex, colIndex)}
                     onMouseDown={(event) => {
                       if (event.button === 2) {
                         event.preventDefault();
@@ -536,7 +534,7 @@ const NumberBaseballGame = memo(function NumberBaseballGame() {
     <section className="w-full max-w-6xl rounded-[2rem] border border-slate-800 bg-slate-950 p-6 shadow-2xl">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
-          <h2 className="text-3xl font-black tracking-tight text-slate-100">NUMBER BASEBALL</h2>
+          <h2 className="text-3xl font-black tracking-tight text-slate-100"><GameJumpLink target="game-baseball">NUMBER BASEBALL</GameJumpLink></h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-400">
             Find the hidden 4-digit number. Strike means right digit and position. Ball means right digit in another position.
           </p>
@@ -546,7 +544,7 @@ const NumberBaseballGame = memo(function NumberBaseballGame() {
         </div>
       </div>
 
-      <div className="grid gap-6 pt-6 lg:grid-cols-[1fr_320px]">
+      <div id="game-baseball" tabIndex={-1} data-game-keys="ignore" className="grid gap-6 pt-6 lg:grid-cols-[1fr_320px]">
         <div className="space-y-3">
           {Array.from({ length: MAX_BASEBALL_GUESSES }).map((_, index) => {
             const guess = guesses[index];
@@ -663,6 +661,8 @@ export default function DinoGame() {
   const [highScore, setHighScore] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const lastFrame = useRef(0);
   const [isNight, setIsNight] = useState(false);
   const [isSiteDark, setIsSiteDark] = useState(false);
   const [speedMultiplier, setSpeedMultiplier] = useState(1);
@@ -732,9 +732,10 @@ export default function DinoGame() {
     const bins: DinoBinary[] = [];
     for(let i=0; i<20; i++) bins.push({ x: Math.random() * CANVAS_WIDTH, y: Math.random() * CANVAS_HEIGHT, val: Math.random() > 0.5 ? '1' : '0', speed: Math.random() * 3 + 2 });
     gameState.current.binaries = bins;
-    const saved = localStorage.getItem('dinoHighScore');
+    let saved: string | null = null;
+    try { saved = localStorage.getItem('dinoHighScore'); } catch {}
     const highScoreTimer = saved
-      ? window.setTimeout(() => setHighScore(parseInt(saved, 10)), 0)
+      ? window.setTimeout(() => setHighScore(Number.isFinite(Number(saved)) ? Math.max(0, Number(saved)) : 0), 0)
       : null;
     return () => {
       if (highScoreTimer !== null) window.clearTimeout(highScoreTimer);
@@ -763,7 +764,7 @@ export default function DinoGame() {
     createParticle(d.x + d.width/2, d.y + d.height/2, '#ef4444', 'piece');
     setHighScore(prev => {
       const newHigh = Math.max(prev, scoreRef.current);
-      localStorage.setItem('dinoHighScore', newHigh.toString());
+      try { localStorage.setItem('dinoHighScore', newHigh.toString()); } catch {}
       return newHigh;
     });
   }, [playSound, createParticle]);
@@ -773,6 +774,8 @@ export default function DinoGame() {
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
 
+    const frameDelta = lastFrame.current ? Math.min(2, (time - lastFrame.current) / (1000 / 60)) : 1;
+    lastFrame.current = time;
     const state = gameState.current;
     const d = dino.current;
     const s = scoreRef.current;
@@ -799,9 +802,9 @@ export default function DinoGame() {
 
       state.baseSpeed = 7 + (state.distance / 2000);
       state.speed = Math.max(6, state.baseSpeed + state.speedVariation);
-      d.y += d.vy;
+      d.y += d.vy * frameDelta;
       const currentGroundY = d.isDucking ? GROUND_LINE - (DINO_SIZE / 2) : GROUND_Y;
-      if (d.y < currentGroundY) d.vy += 0.75; else { d.y = currentGroundY; d.vy = 0; }
+      if (d.y < currentGroundY) d.vy += 0.75 * frameDelta; else { d.y = currentGroundY; d.vy = 0; }
 
       if (time > state.nextSpawnTime) {
         const isFlying = Math.random() > 0.8 && state.distance > 800;
@@ -811,14 +814,14 @@ export default function DinoGame() {
       }
 
       for (let i = state.obstacles.length - 1; i >= 0; i--) {
-        const obs = state.obstacles[i]; obs.x -= state.speed;
+        const obs = state.obstacles[i]; obs.x -= state.speed * frameDelta;
         if (!obs.passed && obs.x < d.x + d.width / 2) { obs.passed = true; playSound('pass'); }
         const p = 12;
         if (d.x + p < obs.x + obs.width - p && d.x + d.width - p > obs.x + p && d.y + p < obs.y + obs.height - p && d.y + d.height - p > obs.y + p) handleGameOverAction();
         if (obs.x + obs.width < -100) state.obstacles.splice(i, 1);
       }
 
-      state.distance += state.speed * 0.1;
+      state.distance += state.speed * 0.1 * frameDelta;
       scoreRef.current = Math.floor(state.distance);
       if (time - lastScoreRenderRef.current > 80) {
         lastScoreRenderRef.current = time;
@@ -899,7 +902,10 @@ export default function DinoGame() {
     return () => cancelAnimationFrame(requestRef.current);
   }, [drawScene]);
 
+  const resumeDino = useCallback(() => { isPlayingRef.current = true; setIsPlaying(true); setIsPaused(false); canvasRef.current?.focus({ preventScroll: true }); }, []);
+
   const startGame = useCallback(() => {
+    setIsPaused(false); canvasRef.current?.focus({ preventScroll: true });
     if (!gameState.current.audioCtx) gameState.current.audioCtx = createAudioContext();
     playGameSound('start');
     gameState.current = { ...gameState.current, speed: 7, baseSpeed: 7, speedVariation: 0, obstacles: [], particles: [], distance: 0, nextSpawnTime: performance.now()+500, lastCheckPoint: 0 };
@@ -929,26 +935,38 @@ export default function DinoGame() {
       Boolean(target.closest('a, button, input, select, textarea, summary, [contenteditable="true"], [data-game-keys="ignore"]'));
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isInteractiveTarget(e.target)) return;
+      if (isInteractiveTarget(e.target) || e.target !== canvasRef.current || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
 
-      if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!isPlayingRef.current) startGame(); else jump(); }
+      if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (!isPlayingRef.current) { if (isPaused) resumeDino(); else startGame(); } else jump(); }
       else if (e.code === 'ArrowDown') { e.preventDefault(); if (isPlayingRef.current) setDucking(true); }
     };
     const handleKeyUp = (e: KeyboardEvent) => { if (e.code === 'ArrowDown') setDucking(false); };
     window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
     return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); };
-  }, [jump, setDucking, startGame]);
+  }, [jump, setDucking, startGame, isPaused, resumeDino]);
+
+  useEffect(() => {
+    const pause = () => { if (isPlayingRef.current) { isPlayingRef.current = false; setIsPlaying(false); setIsPaused(true); } const d = dino.current; if (d.isDucking) { d.isDucking = false; d.height = DINO_SIZE; d.y = GROUND_Y; } };
+    const visibility = () => { if (document.hidden) pause(); };
+    const observer = new IntersectionObserver(entries => { if (!entries[0].isIntersecting) pause(); });
+    if (canvasRef.current) observer.observe(canvasRef.current);
+    const element = canvasRef.current; element?.addEventListener('blur', pause);
+    window.addEventListener('blur', pause); document.addEventListener('visibilitychange', visibility);
+    return () => { observer.disconnect(); element?.removeEventListener('blur', pause); window.removeEventListener('blur', pause); document.removeEventListener('visibilitychange', visibility); };
+  }, []);
 
   const modeName = score > 35000 ? 'CYBER' : score > 30000 ? 'SPACE' : score > 25000 ? 'HEAVEN' : score > 20000 ? 'HELL' : 'BLOCK';
   const modeColor = score > 35000 ? 'text-green-500' : score > 30000 ? 'text-yellow-400' : score > 25000 ? 'text-blue-400' : score > 20000 ? 'text-red-500' : 'text-indigo-500';
 
   return (
     <div className={`flex min-h-screen flex-col items-center justify-center gap-8 overflow-y-auto p-4 py-8 font-sans transition-all duration-1000 ${score > 35000 ? 'bg-black' : score > 30000 ? 'bg-slate-950' : score > 25000 ? 'bg-blue-50' : score > 20000 ? 'bg-red-950' : (visualNight ? 'bg-slate-950' : 'bg-slate-300')}`}>
+      <GameNavigation />
+      <SurvivorGame />
       <div className={`w-full max-w-6xl rounded-[3.5rem] border-4 p-10 shadow-2xl transition-all duration-1000 ${score > 35000 ? 'border-green-900 shadow-green-900/50' : score > 30000 ? 'border-slate-800 shadow-yellow-900/20' : score > 25000 ? 'border-blue-200 bg-white shadow-blue-200/50' : score > 20000 ? 'border-red-600 bg-red-900 shadow-red-900/50' : (visualNight ? 'border-slate-700 bg-slate-900 shadow-black/40' : 'border-slate-100 bg-white')}`}>
         <div className="flex justify-between items-end mb-8 px-4 flex-wrap gap-4">
           <div>
             <h1 className={`text-5xl font-black tracking-tighter transition-colors ${score > 35000 ? 'text-green-500' : score > 30000 ? 'text-white' : score > 25000 ? 'text-blue-600' : score > 20000 ? 'text-red-100' : (visualNight ? 'text-white' : 'text-slate-900')}`}>
-              {modeName} <span className={modeColor}>{score > 35000 ? 'MATRIX' : 'RUN'}</span>
+              <GameJumpLink target="game-dino">{modeName} <span className={modeColor}>{score > 35000 ? 'MATRIX' : 'RUN'}</span></GameJumpLink>
             </h1>
             <p className={`text-[10px] font-bold uppercase tracking-[0.4em] mt-2 ${score > 25000 && score <= 30000 ? 'text-blue-400' : 'text-slate-500'}`}>
               {score > 35000 ? 'SYSTEM OVERRIDE' : score > 30000 ? 'BEYOND THE STARS' : score > 25000 ? 'ETERNAL PEACE' : 'Probabilistic Engine'}
@@ -974,6 +992,7 @@ export default function DinoGame() {
         <div className={`relative overflow-hidden rounded-[2.5rem] border-4 transition-colors duration-1000 ${score > 20000 ? 'bg-black/40 border-white/10' : 'bg-slate-50 border-slate-100'} shadow-2xl`}>
           <canvas
             ref={canvasRef}
+            id="game-dino"
             width={CANVAS_WIDTH}
             height={CANVAS_HEIGHT}
             className="block h-auto w-full"
@@ -987,11 +1006,11 @@ export default function DinoGame() {
             <button
               type="button"
               className="group absolute inset-0 flex cursor-pointer items-center justify-center bg-indigo-900/10 backdrop-blur-[3px]"
-              onClick={startGame}
-              aria-label="Start dinosaur runner"
+              onClick={isPaused ? resumeDino : startGame}
+              aria-label={isPaused ? "공룡 게임 계속하기" : "Start dinosaur runner"}
             >
               <span className={`transform rounded-[2rem] px-16 py-8 text-center shadow-2xl transition-all duration-500 group-hover:scale-105 ${visualNight ? 'border border-slate-700 bg-slate-800' : 'bg-white'}`}>
-                <span className={`mb-3 block text-4xl font-black ${visualNight ? 'text-white' : 'text-slate-900'}`}>READY?</span>
+                <span className={`mb-3 block text-4xl font-black ${visualNight ? 'text-white' : 'text-slate-900'}`}>{isPaused ? "PAUSED" : "READY?"}</span>
                 <span className="block animate-pulse text-lg font-bold tracking-widest text-indigo-500">SPACE TO RUN</span>
               </span>
             </button>
@@ -1012,6 +1031,10 @@ export default function DinoGame() {
           )}
         </div>
 
+        <div className="mt-5 flex justify-center gap-3">
+          <button type="button" className="border px-5 py-3" disabled={!isPlaying} onPointerDown={event => event.preventDefault()} onClick={jump}>점프</button>
+          <button type="button" className="border px-5 py-3" disabled={!isPlaying} style={{ touchAction: 'none' }} onPointerDown={event => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDucking(true); }} onPointerUp={() => setDucking(false)} onPointerCancel={() => setDucking(false)} onLostPointerCapture={() => setDucking(false)}>숙이기 (누르기)</button>
+        </div>
         <div className="mt-12 flex justify-center gap-16 flex-wrap">
           <div className="flex items-center gap-5">
             <kbd className={`rounded-2xl px-5 py-3 font-mono text-lg font-bold shadow-2xl ${score > 20000 || visualNight ? 'border border-white/10 bg-white/10 text-white' : 'bg-white'}`}>SPACE</kbd>

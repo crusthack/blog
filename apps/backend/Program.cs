@@ -216,8 +216,10 @@ app.Use(async (context, next) =>
     await next(context);
 });
 app.UseAuthorization();
-app.MapGet("/api/health", async (BlogDbContext db, CancellationToken cancellationToken) =>
+var releaseInfo = Blog.Api.ReleaseInfo.Load(Path.Combine(AppContext.BaseDirectory, "release-info.json"));
+app.MapGet("/api/health", async (BlogDbContext db, HttpContext context, CancellationToken cancellationToken) =>
 {
+    context.Response.Headers.CacheControl = "no-store";
     var databaseConnected = await db.Database.CanConnectAsync(cancellationToken);
     var status = databaseConnected ? "Healthy" : "Unhealthy";
     var response = new
@@ -226,6 +228,7 @@ app.MapGet("/api/health", async (BlogDbContext db, CancellationToken cancellatio
         Api = new { Status = "Healthy" },
         Database = new { Provider = "SQLite", Status = status },
         CheckedAtUtc = DateTime.UtcNow,
+        Release = releaseInfo,
     };
 
     return databaseConnected

@@ -82,7 +82,11 @@ jobs:
         run: |
           set -euo pipefail
           archive="blog-${DEPLOY_SHA}.tar.gz"
-          git archive --format=tar.gz --output="$archive" "$DEPLOY_SHA"
+          updated_at=$(git show -s --format=%cI "$DEPLOY_SHA")
+          jq -n --arg updatedAtUtc "$updated_at" '{updatedAtUtc: $updatedAtUtc}' > apps/backend/release-info.json
+          git archive --format=tar --output="blog-${DEPLOY_SHA}.tar" "$DEPLOY_SHA"
+          tar -rf "blog-${DEPLOY_SHA}.tar" apps/backend/release-info.json
+          gzip "blog-${DEPLOY_SHA}.tar"
           if tar -tzf "$archive" | grep -Eq '(^|/)secrets(/|$)'; then
             echo "Release archive must not contain the secrets directory." >&2
             exit 1

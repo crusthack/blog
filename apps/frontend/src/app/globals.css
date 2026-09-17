@@ -1762,3 +1762,32 @@ html:has(.post-toc) { scroll-behavior: auto; }
     transition-duration: 0.01ms !important;
   }
 }
+
+.game-navigation { display: flex; flex-wrap: wrap; gap: .5rem; width: 100%; max-width: 72rem; }
+.game-navigation a { border: 1px solid #64748b; background: #15202b; color: #e2e8f0; padding: .65rem 1rem; border-radius: .4rem; }
+.survivor-game { width: 100%; max-width: 72rem; background: #101a22; color: #e2e8f0; border: 1px solid #334155; padding: clamp(.8rem, 3vw, 2rem); border-radius: 1rem; }
+.survivor-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.survivor-heading h2 { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 800; color: #6ee7b7; }
+.survivor-heading p, .survivor-heading > span, .survivor-local-note { font-size: .8rem; color: #94a3b8; margin-block: .5rem; }
+.survivor-hud { display: flex; flex-wrap: wrap; gap: .6rem 1.2rem; margin-block: 1rem; align-items: center; font-size: .8rem; }
+.survivor-hud label { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.survivor-hud progress { width: 6rem; accent-color: #34d399; }
+.survivor-arena { position: relative; width: 100%; outline-offset: 3px; }
+.survivor-arena canvas { display: block; width: 100%; aspect-ratio: 8 / 5; max-height: 65vh; object-fit: contain; background: #101a22; }
+.survivor-overlay { position: absolute; inset: 0; display: grid; align-items: safe center; overflow: auto; background: #071019e8; padding: 1rem; text-align: center; }
+.survivor-overlay h3 { color: #6ee7b7; font-weight: 800; font-size: clamp(1.1rem, 3vw, 1.8rem); }
+.survivor-overlay p { margin-block: .5rem; font-size: .8rem; }
+.survivor-game button { border: 1px solid #475569; background: #1e293b; color: #f1f5f9; padding: .6rem .85rem; border-radius: .4rem; }
+.survivor-game button:disabled { opacity: .45; }
+.survivor-game button:hover:not(:disabled) { border-color: #34d399; }
+.survivor-game :focus-visible { outline: 2px solid #6ee7b7; }
+.survivor-choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; margin-top: 1rem; }
+.survivor-choices button { display: flex; flex-direction: column; gap: .5rem; text-align: left; }
+.survivor-choices span { font-size: .75rem; color: #cbd5e1; }
+.survivor-controls { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-top: 1rem; }
+.survivor-controls button { margin: .2rem; }
+.survivor-controls p { font-size: .75rem; color: #94a3b8; }
+.survivor-stick { display: grid; place-content: center; text-align: center; width: 6rem; height: 6rem; background: #1e293b; border: 1px solid #475569; border-radius: 50%; user-select: none; flex-shrink: 0; }
+.survivor-build { display: flex; flex-wrap: wrap; gap: .4rem; font-size: .75rem; margin-block: 1rem; }
+.survivor-build span { border: 1px solid #334155; padding: .3rem .5rem; }
+@media (max-width: 40rem) { .survivor-choices { grid-template-columns: 1fr; } .survivor-choices button { gap: .15rem; padding: .4rem; } .survivor-overlay { padding: .5rem; } }
