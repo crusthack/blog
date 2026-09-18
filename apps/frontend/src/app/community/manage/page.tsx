@@ -1,2 +1,5 @@
-import CommunityManagement from "@/components/community/CommunityManagement";
-export default function Page() { return <CommunityManagement />; }
+import { redirect } from "next/navigation";
+
+export default function CommunityManagementPage() {
+  redirect("/admin#reports");
+}

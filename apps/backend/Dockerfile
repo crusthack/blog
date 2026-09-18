@@ -2,11 +2,14 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 COPY apps/backend/Blog.Api.csproj apps/backend/
-RUN dotnet restore apps/backend/Blog.Api.csproj
+RUN dotnet restore apps/backend/Blog.Api.csproj \
+    --runtime linux-x64
 
 COPY apps/backend/ apps/backend/
 RUN dotnet publish apps/backend/Blog.Api.csproj \
     --configuration Release \
+    --runtime linux-x64 \
+    --self-contained false \
     --no-restore \
     --output /app/publish \
     /p:UseAppHost=false

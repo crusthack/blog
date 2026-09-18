@@ -11,7 +11,7 @@ export const upgrades = {
 } as const;
 export type Upgrade = keyof typeof upgrades;
 type Point = { x: number; y: number };
-export type Enemy = Point & { id: number; hp: number; maxHp: number; radius: number; speed: number; boss: boolean; hit: number };
+type Enemy = Point & { id: number; hp: number; maxHp: number; radius: number; speed: number; boss: boolean; hit: number };
 export type Survivor = {
   phase: "ready" | "playing" | "paused" | "upgrade" | "dead" | "won";
   time: number; player: Point; hp: number; maxHp: number; xp: number; level: number; kills: number;

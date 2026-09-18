@@ -1,2 +1,5 @@
-import { OwnerMaintenance } from "@/components/posts/OwnerMaintenance";
-export default function TrashPage() { return <OwnerMaintenance tab="trash" />; }
+import { redirect } from "next/navigation";
+
+export default function TrashPage() {
+  redirect("/admin#trash");
+}

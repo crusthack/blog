@@ -7,7 +7,9 @@
 
 EC2를 만들기 전에 다음을 준비한다.
 
-- Ubuntu Server 24.04 LTS, 64-bit 인스턴스
+- Ubuntu Server 24.04 LTS, x86_64/amd64 인스턴스. Backend 이미지는 불필요한
+  타 플랫폼 네이티브 파일을 제외하기 위해 `linux-x64`로 게시하므로 ARM64로 이전할
+  때는 `apps/backend/Dockerfile`의 RID를 함께 변경한다.
 - 암호화된 EBS 볼륨과 삭제 방지 설정
 - 재부팅 후에도 주소가 유지되는 Elastic IP
 - Cloudflare에서 프록시된 `crusthack.com` A/AAAA 레코드

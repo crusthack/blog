@@ -8,23 +8,24 @@ import { type Category, type PostSummary, readProblem, visibilityLabels } from "
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { postPath } from "@/lib/postPaths";
 
-type Props = { categorySlug?: string; manage?: boolean; mine?: boolean; bookmarked?: boolean; embedded?: boolean };
+type Props = { categorySlug?: string; manage?: boolean; bookmarked?: boolean; embedded?: boolean };
+type DirectoryProps = Props & { mine: boolean; isOwner: boolean; canWrite: boolean };
 const pageSize = 20;
 
-export function PostList({ categorySlug, manage = false, mine = false, bookmarked = false, embedded = false }: Props) {
+export function PostList({ categorySlug, manage = false, bookmarked = false, embedded = false }: Props) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   useEffect(() => {
-    if ((manage || mine || bookmarked) && !isLoading && !user) router.replace("/login");
-  }, [manage, mine, bookmarked, isLoading, user, router]);
-  if (isLoading || ((manage || mine || bookmarked) && !user)) {
+    if ((manage || bookmarked) && !isLoading && !user) router.replace("/login");
+  }, [manage, bookmarked, isLoading, user, router]);
+  if (isLoading || ((manage || bookmarked) && !user)) {
     return <p className="board-notice" role="status">{isLoading ? "글 목록을 준비하고 있습니다." : "로그인이 필요합니다."}</p>;
   }
   return <PostDirectory key={`${categorySlug ?? "all"}:${manage}:${user?.id ?? "visitor"}`}
-    categorySlug={categorySlug} manage={manage} embedded={embedded} mine={mine || (manage && !user?.isOwner)} bookmarked={bookmarked} isOwner={Boolean(user?.isOwner)} canWrite={Boolean(user)} />;
+    categorySlug={categorySlug} manage={manage} embedded={embedded} mine={Boolean(manage && user && !user.isOwner)} bookmarked={bookmarked} isOwner={Boolean(user?.isOwner)} canWrite={Boolean(user)} />;
 }
 
-function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwner, canWrite }: Props & { isOwner: boolean; canWrite: boolean }) {
+function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwner, canWrite }: DirectoryProps) {
   const Heading = embedded ? "h2" : "h1";
   const [total, setTotal] = useState(0);
   const [posts, setPosts] = useState<PostSummary[]>([]);
@@ -140,7 +141,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
     <section className="post-board" aria-label={manage ? "전체 게시글 관리" : "게시글 목록"}>
       <header className="board-heading">
         <div>
-          <Heading>{manage ? (isOwner ? "게시글 전체 관리" : "내 글 관리") : bookmarked ? "북마크" : mine ? "내 글" : categorySlug ? activeCategory?.name ?? "카테고리" : "전체 글"}</Heading>
+          <Heading>{manage ? (isOwner ? "게시글 전체 관리" : "내 글 관리") : bookmarked ? "북마크" : categorySlug ? activeCategory?.name ?? "카테고리" : "전체 글"}</Heading>
           <p>{manage ? "공개·비공개·코드 보호 글을 검색하고 관리합니다." : activeCategory?.description ?? "우선순위가 높은 글부터, 같은 순위에서는 최신 글부터 표시합니다."}</p>
         </div>
         <div className="board-heading-actions">

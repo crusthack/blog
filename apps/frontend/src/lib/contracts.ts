@@ -68,7 +68,7 @@ export type PostAsset = {
   updatedAtUtc: string;
 };
 
-export type ProblemDetails = {
+type ProblemDetails = {
   title?: string;
   detail?: string;
   errors?: Record<string, string[]>;
