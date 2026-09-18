@@ -1,16 +1,10 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useEffect, useReducer, useState } from 'react';
 
 import { GameJumpLink } from '@/components/games/GameNavigation';
 import { playGameSound } from '@/components/games/gameAudio';
-
-type MineCell = {
-  isMine: boolean;
-  isRevealed: boolean;
-  isFlagged: boolean;
-  adjacent: number;
-};
+import { toggleMineFlag, type MineCell } from '@/lib/minesweeper';
 
 const MINE_ROWS = 16;
 const MINE_COLS = 30;
@@ -25,6 +19,25 @@ const createEmptyMineBoard = (): MineCell[][] =>
       adjacent: 0,
     }))
   );
+
+type MineBoardState = {
+  board: MineCell[][];
+  flagRevision: number;
+};
+
+type MineBoardAction =
+  | { type: 'replace'; board: MineCell[][] }
+  | { type: 'toggle-flag'; row: number; col: number };
+
+const mineBoardReducer = (state: MineBoardState, action: MineBoardAction): MineBoardState => {
+  if (action.type === 'replace') {
+    return { ...state, board: action.board };
+  }
+
+  const board = toggleMineFlag(state.board, action.row, action.col, MINE_COUNT);
+  if (board === state.board) return state;
+  return { board, flagRevision: state.flagRevision + 1 };
+};
 
 const getMineNeighbors = (row: number, col: number) => {
   const neighbors: Array<[number, number]> = [];
@@ -74,18 +87,26 @@ const createMineBoard = (safeRow: number, safeCol: number): MineCell[][] => {
 };
 
 export const MinesweeperGame = memo(function MinesweeperGame() {
-  const [board, setBoard] = useState<MineCell[][]>(() => createEmptyMineBoard());
+  const [{ board, flagRevision }, dispatchBoard] = useReducer(mineBoardReducer, undefined, () => ({
+    board: createEmptyMineBoard(),
+    flagRevision: 0,
+  }));
   const [isStarted, setIsStarted] = useState(false);
   const [status, setStatus] = useState<'playing' | 'won' | 'lost'>('playing');
   const flags = board.flat().filter(cell => cell.isFlagged).length;
   const [flagMode, setFlagMode] = useState(false);
   const [pressedCell, setPressedCell] = useState<[number, number] | null>(null);
 
+  useEffect(() => {
+    if (flagRevision > 0) playGameSound('flag');
+  }, [flagRevision]);
+
   const reset = () => {
     playGameSound('reset');
-    setBoard(createEmptyMineBoard());
+    dispatchBoard({ type: 'replace', board: createEmptyMineBoard() });
     setIsStarted(false);
     setStatus('playing');
+    setFlagMode(false);
     setPressedCell(null);
   };
 
@@ -151,13 +172,13 @@ export const MinesweeperGame = memo(function MinesweeperGame() {
       const hitMine = hiddenUnflagged.some(([nr, nc]) => activeBoard[nr][nc].isMine);
       if (hitMine) {
         playGameSound('lose');
-        setBoard(revealAllMines(activeBoard));
+        dispatchBoard({ type: 'replace', board: revealAllMines(activeBoard) });
         setStatus('lost');
         return;
       }
 
       const next = revealManyCells(activeBoard, hiddenUnflagged);
-      setBoard(next);
+      dispatchBoard({ type: 'replace', board: next });
       if (hasWon(next)) {
         playGameSound('win');
         setStatus('won');
@@ -169,14 +190,14 @@ export const MinesweeperGame = memo(function MinesweeperGame() {
 
     if (cell.isMine) {
       playGameSound('lose');
-      setBoard(revealAllMines(activeBoard));
+      dispatchBoard({ type: 'replace', board: revealAllMines(activeBoard) });
       setStatus('lost');
       setIsStarted(true);
       return;
     }
 
     const next = revealBoard(activeBoard, row, col);
-    setBoard(next);
+    dispatchBoard({ type: 'replace', board: next });
     setIsStarted(true);
     if (hasWon(next)) {
       playGameSound('win');
@@ -188,12 +209,8 @@ export const MinesweeperGame = memo(function MinesweeperGame() {
 
   const toggleFlag = (row: number, col: number) => {
     if (status !== 'playing') return;
-
-    const cell = board[row][col];
-    if (cell.isRevealed || (!cell.isFlagged && flags >= MINE_COUNT)) return;
-    const next = board.map(cells => cells.map(item => ({ ...item })));
-    next[row][col].isFlagged = !next[row][col].isFlagged;
-    setPressedCell(null); setBoard(next); playGameSound('flag');
+    setPressedCell(null);
+    dispatchBoard({ type: 'toggle-flag', row, col });
   };
 
   const isPressedPreviewCell = (row: number, col: number) => {
@@ -218,49 +235,68 @@ export const MinesweeperGame = memo(function MinesweeperGame() {
   };
 
   return (
-    <section className="w-full max-w-6xl rounded-[2rem] border border-slate-800 bg-slate-950 p-6 shadow-2xl">
+    <section className="w-full max-w-6xl rounded-[1.5rem] border border-slate-800 bg-slate-950 p-4 shadow-2xl sm:rounded-[2rem] sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <h2 className="text-3xl font-black tracking-tight text-slate-100"><GameJumpLink target="game-mines">MINESWEEPER</GameJumpLink></h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-400">
-            Reveal every safe cell. Left click opens a cell, right click places a flag. The first click is safe.
+            안전한 모든 칸을 여세요. 첫 클릭은 안전하며, 마우스 우클릭으로도 깃발을 표시할 수 있습니다.
           </p>
         </div>
-        <div className="text-right font-mono text-sm font-black text-emerald-400">
-          {MINE_COUNT - flags} mines left
+        <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-right font-mono text-sm font-black text-emerald-300">
+          지뢰 {MINE_COUNT - flags}
         </div>
       </div>
 
-      <div className="mt-6 flex flex-col items-center gap-5">
-        <div className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-black/30 p-4">
+      <div className="mt-5 flex flex-col items-center gap-4">
+        <div className="flex w-full flex-col gap-3 rounded-xl border border-slate-800 bg-black/30 p-3 sm:flex-row sm:items-center sm:justify-between">
           <div
-            className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm font-bold text-slate-300"
+            className="flex min-h-11 flex-1 items-center rounded-lg border border-slate-800 bg-slate-950 px-4 py-2 text-sm font-bold text-slate-300"
             role="status"
             aria-live="polite"
           >
-            {status === 'playing' && (isStarted ? 'Use the numbers to locate the mines.' : 'Pick any cell to start.')}
-            {status === 'won' && 'Clear. Every safe cell is open.'}
-            {status === 'lost' && 'Mine triggered. Try another field.'}
+            {status === 'playing' && (isStarted ? '숫자를 단서로 지뢰를 찾아보세요.' : '아무 칸이나 열어 시작하세요.')}
+            {status === 'won' && '클리어! 모든 안전한 칸을 열었습니다.'}
+            {status === 'lost' && '지뢰를 밟았습니다. 새 판에 도전해 보세요.'}
           </div>
-          <button
-            type="button"
-            onClick={reset}
-            className="rounded-lg bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-emerald-400"
-          >
-            NEW FIELD
-          </button>
-          <button type="button" aria-pressed={flagMode} className="border border-slate-500 px-4 py-3 text-slate-100" onClick={() => setFlagMode(!flagMode)}>{flagMode ? "⚑ 깃발 모드" : "칸 열기 모드"}</button>
+          <div className="grid grid-cols-[1fr_auto] gap-2 sm:flex sm:shrink-0">
+            <div className="grid grid-cols-2 rounded-lg border border-slate-700 bg-slate-950 p-1" role="group" aria-label="지뢰찾기 조작 모드">
+              <button
+                type="button"
+                aria-pressed={!flagMode}
+                className={`min-h-9 rounded-md px-3 text-xs font-black transition-colors ${!flagMode ? 'bg-emerald-500 text-slate-950' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}
+                onClick={() => setFlagMode(false)}
+              >
+                칸 열기
+              </button>
+              <button
+                type="button"
+                aria-pressed={flagMode}
+                className={`min-h-9 rounded-md px-3 text-xs font-black transition-colors ${flagMode ? 'bg-amber-400 text-slate-950' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}
+                onClick={() => setFlagMode(true)}
+              >
+                ⚑ 깃발
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={reset}
+              className="min-h-11 rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm font-black text-slate-100 transition-colors hover:border-emerald-400 hover:bg-slate-700"
+            >
+              새 판
+            </button>
+          </div>
         </div>
 
         <div
-          className="w-full overflow-x-auto rounded-xl border border-slate-800 bg-black/40 p-2"
+          className="w-full overflow-x-auto overscroll-x-contain rounded-xl border border-slate-800 bg-black/40 p-1.5 sm:p-2"
           tabIndex={0}
           id="game-mines"
           data-game-keys="ignore"
-          aria-label="Minesweeper board. Scroll horizontally on a small screen."
+          aria-label="지뢰찾기 보드. 작은 화면에서는 좌우로 스크롤할 수 있습니다."
         >
           <div
-            className="grid min-w-[48rem] grid-cols-[repeat(30,minmax(0,1fr))] gap-0.5"
+            className="grid min-w-[48rem] grid-cols-[repeat(30,minmax(0,1fr))] gap-0.5 lg:min-w-0"
             onMouseLeave={() => setPressedCell(null)}
           >
             {board.map((row, rowIndex) =>
@@ -294,7 +330,7 @@ export const MinesweeperGame = memo(function MinesweeperGame() {
                       event.preventDefault();
                       event.stopPropagation();
                     }}
-                    className={`flex aspect-square w-full min-w-0 select-none items-center justify-center rounded border text-[clamp(0.45rem,0.9vw,0.75rem)] font-black transition ${
+                    className={`flex aspect-square w-full min-w-0 touch-manipulation select-none items-center justify-center rounded border text-[clamp(0.45rem,0.9vw,0.75rem)] font-black transition focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-emerald-300 ${
                       cell.isRevealed
                         ? cell.isMine
                           ? 'border-red-500 bg-red-950 text-red-300'
