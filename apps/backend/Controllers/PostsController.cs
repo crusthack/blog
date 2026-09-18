@@ -108,6 +108,13 @@ public sealed class PostsController(
     {
         if (!TryGetUserId(out var ownerId)) return Unauthorized();
 
+        var title = request.Title.Trim();
+        if (title.Length == 0)
+        {
+            ModelState.AddModelError(nameof(request.Title), "제목을 입력해 주세요.");
+            return ValidationProblem(ModelState);
+        }
+
         Category? category = null;
         if (request.CategoryId.HasValue)
         {
@@ -124,7 +131,7 @@ public sealed class PostsController(
         var post = new Post
         {
             PostNumber = postNumber,
-            Title = request.Title.Trim(),
+            Title = title,
             Description = Normalize(request.Description),
             Content = request.Content,
             CategoryId = request.CategoryId,
@@ -157,9 +164,16 @@ public sealed class PostsController(
         if (!PostAccessService.CanManage(post, HttpContext)) return Forbid();
         if (request.ExpectedRevision != post.Revision) return Conflict(new ProblemDetails { Title = "다른 화면에서 글이 수정되었습니다. 현재 내용을 복사한 뒤 새로고침해 주세요." });
 
+        var title = request.Title.Trim();
+        if (title.Length == 0)
+        {
+            ModelState.AddModelError(nameof(request.Title), "제목을 입력해 주세요.");
+            return ValidationProblem(ModelState);
+        }
+
         var accessError = access.Configure(post, request.Visibility, request.AccessCode);
         if (accessError is not null) return BadRequest(new ProblemDetails { Title = accessError });
-        post.Title = request.Title.Trim();
+        post.Title = title;
         post.Description = Normalize(request.Description);
         post.Content = request.Content;
         Category? category = null;

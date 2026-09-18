@@ -6,8 +6,14 @@ readonly marker="$app_root/shared/bootstrap-enabled"
 readonly setup_secret="$app_root/shared/secrets/owner-bootstrap-token"
 readonly current_release="$app_root/current"
 readonly deployment_configuration="/etc/blog/deploy.env"
+readonly deployment_lock="/run/lock/blog-deploy.lock"
 
 [[ $EUID -eq 0 ]] || { echo "finish bootstrap must run as root" >&2; exit 1; }
+command -v flock >/dev/null 2>&1 \
+    || { echo "finish bootstrap requires flock" >&2; exit 1; }
+exec 9>"$deployment_lock"
+flock -n 9 \
+    || { echo "another deployment or bootstrap update is already in progress" >&2; exit 1; }
 [[ -L $current_release ]] || { echo "current release is not configured" >&2; exit 1; }
 
 # shellcheck source=/dev/null

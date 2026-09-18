@@ -85,6 +85,7 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
         builder.Entity<PostAsset>(entity =>
         {
             entity.HasKey(asset => asset.Id);
+            entity.HasQueryFilter(asset => asset.Post.DeletedAtUtc == null);
             entity.HasIndex(asset => new { asset.PostId, asset.Name }).IsUnique();
             entity.Property(asset => asset.Name).HasMaxLength(120);
             entity.Property(asset => asset.Extension).HasMaxLength(8);
@@ -128,6 +129,7 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
         });
         builder.Entity<ContentReport>(entity =>
         {
+            entity.HasQueryFilter(item => item.Post.DeletedAtUtc == null);
             entity.HasIndex(item => new { item.ResolvedAtUtc, item.CreatedAtUtc });
             entity.Property(item => item.Reason).HasMaxLength(1000);
             entity.Property(item => item.Resolution).HasMaxLength(1000);

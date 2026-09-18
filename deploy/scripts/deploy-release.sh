@@ -6,6 +6,7 @@ readonly releases_directory="$app_root/releases"
 readonly shared_directory="$app_root/shared"
 readonly archive_directory="/var/tmp"
 readonly deployment_configuration="/etc/blog/deploy.env"
+readonly deployment_lock="/run/lock/blog-deploy.lock"
 
 fail() {
     echo "blog deploy: $*" >&2
@@ -17,6 +18,10 @@ fail() {
 
 readonly commit_sha="$1"
 [[ $commit_sha =~ ^[0-9a-f]{40}$ ]] || fail "invalid commit SHA"
+
+command -v flock >/dev/null 2>&1 || fail "flock is required to serialize deployments"
+exec 9>"$deployment_lock"
+flock -n 9 || fail "another deployment is already in progress"
 
 readonly archive_path="$archive_directory/blog-$commit_sha.tar.gz"
 readonly release_path="$releases_directory/$commit_sha"

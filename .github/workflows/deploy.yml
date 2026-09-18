@@ -55,11 +55,22 @@ jobs:
         run: |
           set -euo pipefail
           dotnet restore Blog.slnx
+          dotnet tool restore
           dotnet format Blog.slnx --verify-no-changes --no-restore
           dotnet test Blog.slnx --configuration Release --no-restore
+          dotnet ef migrations has-pending-model-changes --project apps/backend/Blog.Api.csproj
+          dotnet publish apps/backend/Blog.Api.csproj \
+            --configuration Release \
+            --no-restore \
+            --output artifacts/backend
+          test ! -f artifacts/backend/appsettings.Development.json
+          ! grep -R --fixed-strings --files-with-matches localdev artifacts/backend
           npm ci
           npm run lint:frontend
+          npm run test:frontend
           npm run build:frontend
+          for script in deploy/scripts/*.sh; do bash -n "$script"; done
+          deploy/scripts/production-preflight.sh
 
       - name: Validate deployment inputs
         shell: bash
@@ -83,7 +94,11 @@ jobs:
           set -euo pipefail
           archive="blog-${DEPLOY_SHA}.tar.gz"
           updated_at=$(git show -s --format=%cI "$DEPLOY_SHA")
-          jq -n --arg updatedAtUtc "$updated_at" '{updatedAtUtc: $updatedAtUtc}' > apps/backend/release-info.json
+          jq -n \
+            --arg commitSha "$DEPLOY_SHA" \
+            --arg updatedAtUtc "$updated_at" \
+            '{commitSha: $commitSha, updatedAtUtc: $updatedAtUtc}' \
+            > apps/backend/release-info.json
           git archive --format=tar --output="blog-${DEPLOY_SHA}.tar" "$DEPLOY_SHA"
           tar -rf "blog-${DEPLOY_SHA}.tar" apps/backend/release-info.json
           gzip "blog-${DEPLOY_SHA}.tar"

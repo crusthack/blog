@@ -3,8 +3,11 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using Blog.Api.Controllers;
+using Blog.Api.Data;
 using Blog.Api.Setup;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blog.Api.Tests;
 
@@ -118,6 +121,12 @@ public sealed class PostAssetFlowTests
             (await owner.DeleteAsync($"/api/posts/{post.PostNumber}")).StatusCode);
         Assert.Equal(2, Directory.EnumerateFiles(factory.AssetStoragePath).Count());
         Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(jpeg.Url)).StatusCode);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+            Assert.Empty(await db.PostAssets.ToListAsync());
+            Assert.Equal(2, await db.PostAssets.IgnoreQueryFilters().CountAsync());
+        }
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/posts/{post.PostNumber}/permanent")).StatusCode);
         Assert.Empty(Directory.EnumerateFiles(factory.AssetStoragePath));
     }

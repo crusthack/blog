@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Blog.Api.Controllers;
+using Blog.Api.Data;
 using Blog.Api.Setup;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blog.Api.Tests;
 
@@ -99,5 +102,48 @@ public sealed class BasicPostFlowTests
             });
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Required_names_are_rejected_when_they_only_contain_whitespace()
+    {
+        using var factory = new SetupApiFactory();
+        using var owner = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            BaseAddress = new Uri("https://localhost"),
+        });
+
+        Assert.Equal(HttpStatusCode.Created, (await owner.PostAsJsonAsync(
+            "/api/setup/owner",
+            new CreateOwnerRequest
+            {
+                SetupCode = SetupApiFactory.SetupCode,
+                Username = "validation-owner",
+                Password = "correct horse battery staple",
+            })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PostAsJsonAsync(
+            "/api/auth/login",
+            new LoginRequest
+            {
+                Username = "validation-owner",
+                Password = "correct horse battery staple",
+            })).StatusCode);
+
+        var postResponse = await owner.PostAsJsonAsync(
+            "/api/posts",
+            new CreatePostRequest { Title = " \t\r\n ", Content = "content" });
+        Assert.Equal(HttpStatusCode.BadRequest, postResponse.StatusCode);
+
+        var categoryResponse = await owner.PostAsJsonAsync(
+            "/api/categories",
+            new SaveCategoryRequest { Name = " \t\r\n ", Slug = "invalid-name" });
+        Assert.Equal(HttpStatusCode.BadRequest, categoryResponse.StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+        Assert.Empty(await db.Posts.ToListAsync());
+        Assert.Empty(await db.Categories.ToListAsync());
+        Assert.Equal(0, await db.PostCounters.Where(counter => counter.Id == 1)
+            .Select(counter => counter.LastNumber).SingleAsync());
     }
 }

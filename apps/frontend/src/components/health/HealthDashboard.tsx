@@ -9,7 +9,7 @@ type HealthResponse = {
   api?: { status: ServiceStatus };
   database?: { provider: string; status: ServiceStatus };
   checkedAtUtc?: string;
-  release?: { updatedAtUtc: string | null };
+  release?: { commitSha: string | null; updatedAtUtc: string | null };
 };
 
 export function HealthDashboard({ embedded = false }: { embedded?: boolean } = {}) {
@@ -102,7 +102,12 @@ export function HealthDashboard({ embedded = false }: { embedded?: boolean } = {
             {health?.release?.updatedAtUtc ? <time dateTime={health.release.updatedAtUtc}>{formatCheckedAt(health.release.updatedAtUtc)} (KST)</time>
               : isRefreshing && !health ? "확인 중…" : "배포 정보 없음"}
           </p>
-          <p className="mt-1 text-sm text-gray-500">현재 배포된 소스의 마지막 커밋 기준</p>
+          <p className="mt-1 text-sm text-gray-500">
+            현재 배포된 소스의 마지막 커밋 기준
+            {health?.release?.commitSha ? (
+              <> · <code title={health.release.commitSha}>{health.release.commitSha.slice(0, 7)}</code></>
+            ) : null}
+          </p>
         </section>
 
         <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-gray-200 px-6 py-5 dark:border-gray-700 sm:px-10">

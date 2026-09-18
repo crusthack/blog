@@ -1,13 +1,19 @@
-# Blog 완전 재구축 실습 교안
+# Blog 초기 버전 재구축 실습 교안 (2026-09-03 스냅샷)
 
-이 교안은 완성 저장소를 실행하는 설명서가 아니라, **빈 실습 폴더에서 현재 Blog를
+> **역사적 스냅샷 안내:** 이 문서는 현재 `main`의 전체 기능을 재구축하는 교안이
+> 아니다. 2026-09-03 커밋 `07547ff006f0020a8779bb007d232e5460debc7e`의 초기
+> 블로그를 단계별로 학습하기 위해 고정한 자료다. 문서 안의 “현재”, 파일 수, 기능,
+> 테스트 수와 한계는 모두 이 커밋을 뜻한다. 현재 `main`의 기능과 실행 방법은
+> [저장소 README](../README.md), [기능 이식 현황](FEATURE_MIGRATION_ROADMAP.md)과
+> 각 기능 문서를 먼저 확인한다. 현재 `main`의 테스트 수는 기능 추가에 따라
+> 달라지므로 `npm run test:backend`와 `npm run test:frontend` 결과를 기준으로 한다.
+
+이 교안은 완성 저장소를 실행하는 설명서가 아니라, **빈 실습 폴더에서 당시 Blog를
 단계별로 다시 구성하는 학습 과정**이다. 각 장의 설명을 읽고 바로 아래 PowerShell
-또는 Bash 블록을 그대로 붙여 넣으면 소스, 환경 설정, 테스트, Docker, EC2와
-GitHub Actions CD까지 같은 구조로 재현할 수 있다.
+또는 Bash 블록을 붙여 넣으면 당시 소스, 환경 설정, 테스트, Docker, EC2와
+GitHub Actions CD 구조를 재현할 수 있다.
 
-전체 스캔과 실행 검증일은 2026-09-03이며, 작성 기준 기능 커밋은
-`07547ff006f0020a8779bb007d232e5460debc7e`이다. 교안만 수정된 이후 커밋에서도
-애플리케이션 소스가 바뀌지 않았다면 같은 결과가 나온다.
+전체 스캔과 실행 검증일은 2026-09-03이며, 위 커밋을 작성 기준으로 삼는다.
 
 > 이 교안에서 “동일”은 Git 이력이나 자동 생성 시각까지 같은 바이트 단위 복제가
 > 아니라, 같은 소스·설정·의존성·DB schema·테스트·배포 동작을 가진 저장소를 뜻한다.
@@ -47,9 +53,9 @@ GitHub Actions CD까지 같은 구조로 재현할 수 있다.
 바꾸며 꺾쇠 자체는 입력하지 않는다. 코드 블록 표제의 `powershell`, `cmd`, `bash`를
 확인하고 해당 shell에서만 실행한다.
 
-## 1. 전체 스캔 결과
+## 1. 작성 기준 스냅샷의 전체 스캔 결과
 
-현재 저장소는 Git 추적 파일 95개로 구성된다.
+작성 기준 스냅샷은 Git 추적 파일 95개로 구성된다.
 
 | 영역 | 파일 수 | 핵심 역할 |
 |---|---:|---|
@@ -61,7 +67,7 @@ GitHub Actions CD까지 같은 구조로 재현할 수 있다.
 | Docs | 2 | 본 교안과 기능 이식 로드맵 |
 | Root | 9 | workspace, lockfile, solution, ignore 정책 |
 
-### 현재 제공 기능
+### 이 스냅샷에서 제공한 기능
 
 - Owner 최초 생성, 로그인, 로그아웃과 IP별 로그인 요청 제한
 - Owner만 글 생성·수정·삭제
@@ -73,7 +79,7 @@ GitHub Actions CD까지 같은 구조로 재현할 수 있다.
 - Backend 테스트, Frontend lint/build, Compose/Nginx CI
 - GitHub-hosted runner에서 EC2로 SCP/SSH 배포
 
-### 아직 없는 기능
+### 이 스냅샷에 없던 기능
 
 - 이미지 업로드·관리
 - 글별 접근 코드
@@ -189,14 +195,17 @@ New-Item -ItemType Directory -Force -Path $CourseRoot | Out-Null
 Set-Location $CourseRoot
 git clone https://github.com/crusthack/blog.git blog-reference
 $ReferenceRoot = (Resolve-Path (Join-Path $CourseRoot 'blog-reference')).Path
+git -C $ReferenceRoot checkout --detach 07547ff006f0020a8779bb007d232e5460debc7e
 $LabRoot = Join-Path $CourseRoot 'blog-learning'
 ```
 
-현재 PC처럼 `C:\Users\jin\Documents\blog\blog`이 이미 완성 저장소라면 위 clone
-블록 대신 다음 두 줄을 실행한다.
+`C:\Users\jin\Documents\blog\blog`처럼 현재 저장소가 이미 있다면 활성 작업 폴더를
+과거 커밋으로 바꾸지 말고 별도의 읽기 전용 worktree를 만든다.
 
 ```powershell
-$ReferenceRoot = (Resolve-Path 'C:\Users\jin\Documents\blog\blog').Path
+$SourceRoot = (Resolve-Path 'C:\Users\jin\Documents\blog\blog').Path
+$ReferenceRoot = 'C:\Users\jin\Documents\blog\blog-reference-20260903'
+git -C $SourceRoot worktree add --detach $ReferenceRoot 07547ff006f0020a8779bb007d232e5460debc7e
 $LabRoot = 'C:\Users\jin\Documents\blog\blog-learning'
 ```
 
@@ -204,6 +213,11 @@ $LabRoot = 'C:\Users\jin\Documents\blog\blog-learning'
 붙여 넣는다.
 
 ```powershell
+$ExpectedSnapshot = '07547ff006f0020a8779bb007d232e5460debc7e'
+if ((git -C $ReferenceRoot rev-parse HEAD).Trim() -ne $ExpectedSnapshot) {
+    throw "교재 저장소가 역사적 스냅샷과 다릅니다: $ReferenceRoot"
+}
+
 New-Item -ItemType Directory -Force -Path $LabRoot | Out-Null
 if ((Get-ChildItem -LiteralPath $LabRoot -Force | Measure-Object).Count -ne 0) {
     throw "실습 폴더가 비어 있지 않습니다: $LabRoot"
@@ -547,7 +561,8 @@ dotnet restore Blog.slnx
 dotnet test Blog.slnx --configuration Release --no-restore
 ```
 
-현재 예상 결과는 8개 테스트 성공이다.
+이 스냅샷의 해당 단계 예상 결과는 백엔드 테스트 8개 성공이다. 현재 `main`의 전체
+테스트 수와 혼동하지 않는다.
 
 `SetupApiFactory`는 테스트마다 임시 디렉터리, SQLite 파일과 Setup Code를 만들고
 종료할 때 삭제한다. 테스트 환경은 `Testing`이므로 개발 Owner initializer가
@@ -1324,10 +1339,11 @@ sudo docker compose -f /srv/blog/current/compose.production.yaml \
 - 443 Security Group이 Cloudflare 대역에서 열렸는지 확인
 - Cloudflare mode가 `Full (strict)`인지 확인
 
-## 24. 현재 구현의 한계와 개선 과제
+## 24. 역사적 스냅샷의 한계와 당시 개선 과제
 
-현재와 동일하게 재현하려면 아래 한계를 임의로 고치지 않는다. 별도 branch에서
-개선한다.
+스냅샷과 동일하게 재현하려면 아래 당시 한계를 임의로 고치지 않는다. 상당수는 현재
+`main`에서 이미 해결되었으므로 현재 상태 판단에는
+[기능 이식 현황](FEATURE_MIGRATION_ROADMAP.md)을 사용한다.
 
 - `PostNumber = Max + 1`은 동시 글 생성 경쟁에 취약하며, 가장 큰 번호의 글을 지운 뒤
   그 번호가 재사용될 수 있다.
@@ -1373,15 +1389,15 @@ sudo docker compose -f /srv/blog/current/compose.production.yaml \
 - Cloudflare IP 목록은 Nginx 파일에 정적으로 들어 있어 공식 목록과 주기적으로 비교해야
   한다.
 
-## 25. 최종 합격 체크리스트
+## 25. 역사적 스냅샷 재현 체크리스트
 
 ### 저장소
 
 - [ ] root `npm ci`, `dotnet restore` 성공
 - [ ] Git 추적 대상에 `secrets`, DB, backup 없음
 - [ ] EF pending model change 없음
-- [ ] Backend 테스트 8개 성공
-- [ ] Frontend lint와 production build 성공
+- [ ] 이 스냅샷의 Backend 테스트 8개 성공
+- [ ] 이 스냅샷의 Frontend lint와 production build 성공
 - [ ] `git diff --check` 성공
 
 ### 로컬 기능

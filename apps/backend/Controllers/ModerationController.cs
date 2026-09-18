@@ -42,7 +42,9 @@ public sealed class ModerationController(BlogDbContext db) : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(request.Resolution)) return BadRequest();
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var report = await db.ContentReports.SingleOrDefaultAsync(item => item.Id == id && item.ResolvedAtUtc == null);
+        // Moderators can still close reports after the reported post has moved to trash.
+        var report = await db.ContentReports.IgnoreQueryFilters()
+            .SingleOrDefaultAsync(item => item.Id == id && item.ResolvedAtUtc == null);
         if (report is null) return NotFound();
         if (request.HideContent)
         {

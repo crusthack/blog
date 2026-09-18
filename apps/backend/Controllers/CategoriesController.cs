@@ -46,6 +46,9 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
     [HttpPost]
     public async Task<ActionResult<CategoryResponse>> Create(SaveCategoryRequest request)
     {
+        var name = request.Name.Trim();
+        if (name.Length == 0)
+            ModelState.AddModelError(nameof(request.Name), "카테고리 이름을 입력해 주세요.");
         var slug = NormalizeSlug(request.Slug);
         if (!SlugPattern().IsMatch(slug))
             ModelState.AddModelError(nameof(request.Slug), "Slug는 영문 소문자, 숫자와 하이픈만 사용할 수 있습니다.");
@@ -55,7 +58,7 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 
         var category = new Category
         {
-            Name = request.Name.Trim(),
+            Name = name,
             Slug = slug,
             Description = Normalize(request.Description),
             SortOrder = request.SortOrder,
@@ -74,6 +77,9 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
             .SingleOrDefaultAsync(item => item.Id == id);
         if (category is null) return NotFound();
 
+        var name = request.Name.Trim();
+        if (name.Length == 0)
+            ModelState.AddModelError(nameof(request.Name), "카테고리 이름을 입력해 주세요.");
         var slug = NormalizeSlug(request.Slug);
         if (!SlugPattern().IsMatch(slug))
             ModelState.AddModelError(nameof(request.Slug), "Slug는 영문 소문자, 숫자와 하이픈만 사용할 수 있습니다.");
@@ -81,7 +87,7 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         if (await db.Categories.AnyAsync(item => item.Id != id && item.Slug == slug))
             return Conflict(new ProblemDetails { Title = "이미 사용 중인 카테고리 slug입니다." });
 
-        category.Name = request.Name.Trim();
+        category.Name = name;
         category.Slug = slug;
         category.Description = Normalize(request.Description);
         category.SortOrder = request.SortOrder;

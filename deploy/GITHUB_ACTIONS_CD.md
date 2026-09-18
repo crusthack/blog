@@ -2,7 +2,8 @@
 
 `.github/workflows/deploy.yml`은 `main`의 `CI` workflow가 성공하면 해당 커밋을
 EC2에 자동 배포한다. `workflow_dispatch`로 수동 실행할 수도 있지만 `main`에서만
-허용하며, 수동 실행 시에는 Backend test와 Frontend lint/build를 다시 수행한다.
+허용하며, 수동 실행 시에는 Backend format/test/publish와 EF migration 일치 검사,
+Frontend lint/test/build 및 기본 배포 설정 검증을 다시 수행한다.
 오래된 CI 실행을 다시 실행해도 현재 `main` HEAD가 아니면 배포를 거부한다.
 
 ## 배포 흐름
@@ -14,6 +15,7 @@ main push
   → 검증된 commit의 Git tracked files를 tar.gz로 패키징
   → 고정된 SSH host key를 검증하며 /var/tmp에 SCP
   → ubuntu가 sudo로 root 소유 deploy-blog <commit-sha> 실행
+  → 서버 배포 잠금 획득(다른 수동/자동 배포와의 충돌 방지)
   → 기존 runtime 백업
   → /srv/blog/releases/<commit-sha> 활성화
   → Docker Compose build/up
@@ -145,4 +147,10 @@ GitHub secrets와 EC2 authorized key를 정기적으로 검토하고 사용하�
 
 ## 헬스체크의 최근 업데이트
 
-CD 패키징 시 배포 대상 커밋의 committer 시각을 `apps/backend/release-info.json`에 기록해 릴리스와 함께 배포합니다. `/api/health`의 `release.updatedAtUtc`와 헬스체크 페이지의 최근 업데이트에 사용하며, 표시 시간대는 Asia/Seoul입니다. 상태 조회 시각(`checkedAtUtc`) 및 서버 재시작 시각과 구분합니다. 재배포·롤백 시에도 해당 소스 커밋의 시각을 유지합니다. 메타데이터가 없는 로컬·수동 빌드는 `배포 정보 없음`으로 표시됩니다.
+CD 패키징 시 배포 대상의 전체 commit SHA와 committer 시각을
+`apps/backend/release-info.json`에 기록해 릴리스와 함께 배포합니다.
+`/api/health`의 `release.commitSha`, `release.updatedAtUtc`와 헬스체크 페이지의
+최근 업데이트에 사용하며, 표시 시간대는 Asia/Seoul입니다. 상태 조회 시각
+(`checkedAtUtc`) 및 서버 재시작 시각과 구분합니다. 재배포·롤백 시에도 해당 소스
+커밋의 식별자와 시각을 유지합니다. 메타데이터가 없는 로컬·수동 빌드는
+`배포 정보 없음`으로 표시됩니다.

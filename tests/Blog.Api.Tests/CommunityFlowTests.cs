@@ -285,6 +285,44 @@ public sealed class CommunityFlowTests
     }
 
     [Fact]
+    public async Task Reports_for_trashed_posts_are_hidden_by_default_but_remain_moderatable()
+    {
+        using var factory = new SetupApiFactory();
+        using var owner = await Owner(factory);
+        using var member = await Member(factory, owner);
+        var post = await Post(owner);
+
+        Assert.Equal(
+            HttpStatusCode.Created,
+            (await member.PostAsJsonAsync(
+                Root(post) + "/reports",
+                new { reason = "Review before this post is removed" })).StatusCode);
+        var reports = await owner.GetFromJsonAsync<JsonElement>("/api/community/reports");
+        var reportId = Assert.Single(reports.GetProperty("items").EnumerateArray())
+            .GetProperty("id").GetGuid();
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await owner.DeleteAsync($"/api/posts/{post.PostNumber}")).StatusCode);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+            Assert.Equal(0, await db.ContentReports.CountAsync());
+            Assert.Equal(1, await db.ContentReports.IgnoreQueryFilters().CountAsync());
+        }
+
+        Assert.Equal(
+            HttpStatusCode.NoContent,
+            (await owner.PutAsJsonAsync(
+                $"/api/community/reports/{reportId}",
+                new { resolution = "Closed after the post was trashed" })).StatusCode);
+        var resolved = await owner.GetFromJsonAsync<JsonElement>(
+            "/api/community/reports?resolved=true");
+        Assert.Equal(reportId, Assert.Single(resolved.GetProperty("items").EnumerateArray())
+            .GetProperty("id").GetGuid());
+    }
+
+    [Fact]
     public async Task Suspension_blocks_existing_sessions_and_owner_cannot_be_suspended()
     {
         using var factory = new SetupApiFactory(); using var owner = await Owner(factory); using var member = await Member(factory, owner);
