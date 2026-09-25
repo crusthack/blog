@@ -26,6 +26,8 @@ ENV PORT=3000
 COPY --from=builder --chown=node:node /app/apps/frontend/.next/standalone ./
 COPY --from=builder --chown=node:node /app/apps/frontend/.next/static ./apps/frontend/.next/static
 
+COPY --from=builder --chown=node:node /app/apps/frontend/content ./apps/frontend/content
+
 EXPOSE 3000
 USER node
 CMD ["node", "apps/frontend/server.js"]

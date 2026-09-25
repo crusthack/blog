@@ -11,7 +11,7 @@ import { type Category, type PostDetail, type PostVisibility, readProblem, visib
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
 
-export function PostEditor({ postNumber }: { postNumber?: string }) {
+export function PostEditor({ postNumber, initialCategory }: { postNumber?: string; initialCategory?: string }) {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [revision, setRevision] = useState(1);
@@ -20,10 +20,10 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   const [content, setContent] = useState(initialContent);
   const [categoryId, setCategoryId] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
-  const [visibility, setVisibility] = useState<PostVisibility>("Public");
+  const [visibility, setVisibility] = useState<PostVisibility>("Private");
   const [accessCode, setAccessCode] = useState("");
   const [hasAccessCode, setHasAccessCode] = useState(false);
-  const [isLoading, setIsLoading] = useState(Boolean(postNumber));
+  const [isLoading, setIsLoading] = useState(Boolean(postNumber || initialCategory));
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState("");
@@ -31,12 +31,13 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const savingRef = useRef(false);
   const leavingRef = useRef(false);
+  const categoryInitializedRef = useRef(false);
   const [view, setView] = useState("split");
   const [pendingLink, setPendingLink] = useState<string | null>(null);
   const leaveDialogRef = useRef<HTMLDialogElement>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const snapshot = JSON.stringify([title, description, content, categoryId, visibility, accessCode]);
-  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(["", "", initialContent, "", "Public", ""]));
+  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(["", "", initialContent, "", "Private", ""]));
   const dirty = !isLoading && !loadFailed && snapshot !== savedSnapshot;
 
   useEffect(() => {
@@ -125,13 +126,27 @@ export function PostEditor({ postNumber }: { postNumber?: string }) {
         if (!response.ok) throw new Error(await readProblem(response, "카테고리를 불러오지 못했습니다."));
         return (await response.json()) as Category[];
       })
-      .then(setCategories)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+        setCategories(items);
+        if (!postNumber && initialCategory && !categoryInitializedRef.current) {
+          categoryInitializedRef.current = true;
+          const selected = items.find(item => item.slug === initialCategory || item.id === initialCategory);
+          const selectedId = selected?.id ?? "";
+          setCategoryId(selectedId);
+          setSavedSnapshot(JSON.stringify(["", "", initialContent, selectedId, "Private", ""]));
+          if (!selected) setError("선택한 카테고리를 찾을 수 없습니다. 다른 카테고리를 선택해 주세요.");
+        }
+      })
       .catch((reason: unknown) => {
-        if (!(reason instanceof DOMException && reason.name === "AbortError"))
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
+          if (!postNumber && initialCategory) setLoadFailed(true);
           setError(reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.");
-      });
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted && !postNumber && initialCategory) setIsLoading(false); });
     return () => controller.abort();
-  }, [user]);
+  }, [user, postNumber, initialCategory]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

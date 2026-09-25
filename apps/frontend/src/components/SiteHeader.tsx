@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { Category } from "@/lib/contracts";
@@ -8,6 +9,9 @@ import { navigationExternalLinks, type ExternalLink } from "@/lib/siteLinks";
 import { categoriesUpdatedEvent, externalLinksUpdatedEvent } from "@/lib/uiEvents";
 
 export function SiteHeader() {
+  const pathname = usePathname();
+  const categoryPath = pathname.match(/^\/categories\/([^/]+)$/);
+  const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
   const { user, isLoading, logout } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(navigationExternalLinks);
@@ -223,6 +227,7 @@ export function SiteHeader() {
                 <ExternalSiteLinks links={externalLinks} onNavigate={closeMenus} />
               </div>
             </details>
+            <Link className="site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold sm:px-3" href="/about" onClick={closeMenus}>개발자소개</Link>
             <details
               className="group/categories relative"
               onToggle={(event) => {
@@ -268,6 +273,18 @@ export function SiteHeader() {
             </details>
 
             {user ? (
+              <>
+              <Link
+                aria-label="글쓰기"
+                title="글쓰기"
+                className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white transition hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500"
+                href={writeHref}
+                onClick={closeMenus}
+              >
+                <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m16 3 5 5M4 15 16.5 2.5a2.12 2.12 0 0 1 3 0l2 2a2.12 2.12 0 0 1 0 3L9 20l-6 1 1-6Z" />
+                </svg>
+              </Link>
               <details
                 className="group/owner relative"
                 onToggle={(event) => {
@@ -289,19 +306,10 @@ export function SiteHeader() {
                   </span>
                 </summary>
                 <div className="site-nav-dropdown absolute right-0 z-50 mt-2 w-48 overflow-hidden border py-2">
-                  <Link
-                    className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                    href="/write"
-                    onClick={closeMenus}
-                  >
-                    새 글 작성
-                  </Link>
                   <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
                     href={user.isOwner ? "/admin#posts" : "/posts/manage"} onClick={closeMenus}>
                     {user.isOwner ? "게시글 전체 관리" : "내 글 관리"}
                   </Link>
-                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/bookmarks" onClick={closeMenus}>북마크</Link>
-                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/workspaces" onClick={closeMenus}>내 슬라이드 필기</Link>
                   {user.isOwner && <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition" href="/admin" onClick={closeMenus}>사이트 관리</Link>}
                   <button
                     className="site-nav-dropdown-link block w-full px-4 py-2.5 text-left text-sm font-bold transition"
@@ -315,6 +323,7 @@ export function SiteHeader() {
                   </button>
                 </div>
               </details>
+              </>
             ) : (
               <Link
                 aria-disabled={isLoading}

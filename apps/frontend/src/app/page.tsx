@@ -1,33 +1,14 @@
 import type { Metadata } from "next";
 import { BlogFrame } from "@/components/BlogFrame";
-import { MarkdownContent } from "@/components/posts/MarkdownContent";
-import { getHomeContent } from "@/lib/homeContent";
+import { SitePageDocument } from "@/components/SitePageDocument";
+import { getSitePage } from "@/lib/sitePageContent";
 
-export function generateMetadata(): Metadata {
-  const home = getHomeContent();
-  return {
-    title: home.title,
-    description: home.description,
-  };
+export async function generateMetadata(): Promise<Metadata> {
+  const { content } = await getSitePage("home");
+  return { title: content.title, description: content.description };
 }
 
-export default function Home() {
-  const home = getHomeContent();
-
-  return (
-    <BlogFrame>
-      <article className="legacy-home-document post-view" data-view="post">
-        <header className="legacy-document-header">
-          <h1>{home.title}</h1>
-          {home.date ? <time dateTime={home.date}>{home.date}</time> : null}
-          <p>{home.description}</p>
-        </header>
-        <div className="post-view-body">
-          <div className="post-view-markdown">
-            <MarkdownContent source={home.markdown} />
-          </div>
-        </div>
-      </article>
-    </BlogFrame>
-  );
+export default async function Page() {
+  const data = await getSitePage("home");
+  return <BlogFrame><SitePageDocument page="home" {...data} /></BlogFrame>;
 }

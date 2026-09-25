@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { readProblem } from "@/lib/contracts";
@@ -153,10 +154,11 @@ export function SiteSettingsManager({ embedded = false }: { embedded?: boolean }
       <header className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-black tracking-[0.2em] text-emerald-600">SITE SETTINGS</p>
-          <Heading className="mt-2 text-4xl font-black">외부 사이트 관리</Heading>
+          <Heading className="mt-2 text-4xl font-black">사이트 설정</Heading>
           <p className="mt-3 max-w-2xl leading-7 text-gray-600 dark:text-gray-300">
-            상단 외부 사이트 드롭다운에 표시할 링크와 순서를 관리합니다.
+            메인페이지·개발자소개는 각 페이지의 수정 버튼으로 편집하고, 아래에서 외부 사이트 메뉴를 관리합니다.
           </p>
+          <div className="mt-3 flex gap-4"><Link className="underline" href="/">메인페이지 수정 바로가기</Link><Link className="underline" href="/about">개발자소개 수정 바로가기</Link></div>
         </div>
         <span className="text-sm font-bold text-gray-500">{links.length} / {maxExternalLinks}</span>
       </header>

@@ -141,6 +141,37 @@ public sealed class SiteSettingsAndHealthTests
         Assert.InRange(checkedAtUtc, before, DateTime.UtcNow.AddSeconds(1));
     }
 
+    [Fact]
+    public async Task Site_pages_validate_access_content_conflicts_and_reset()
+    {
+        using var factory = new SetupApiFactory();
+        using var owner = factory.CreateClient(ClientOptions());
+        using var visitor = factory.CreateClient(ClientOptions());
+        var initial = await visitor.GetFromJsonAsync<SitePageResponse>("/api/site-pages/home");
+        Assert.Null(initial!.Content);
+        Assert.Equal("", initial.Revision);
+        var request = new SaveSitePageRequest { Content = new SitePageContent { Title = "Home", Markdown = "## Content" } };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PutAsJsonAsync("/api/site-pages/home", request)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync("/api/site-pages/unknown")).StatusCode);
+        await CreateAndLoginOwnerAsync(owner, "page-owner");
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync("/api/site-pages/home",
+            new SaveSitePageRequest { Content = new SitePageContent { Title = " " } })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync("/api/site-pages/home",
+            new SaveSitePageRequest { Content = new SitePageContent { Title = "Date", Date = "2026-99-99" } })).StatusCode);
+        var response = await owner.PutAsJsonAsync("/api/site-pages/home", request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var saved = (await response.Content.ReadFromJsonAsync<SitePageResponse>())!;
+        Assert.NotEmpty(saved.Revision);
+        Assert.Equal("## Content", (await visitor.GetFromJsonAsync<SitePageResponse>("/api/site-pages/home"))!.Content!.Markdown);
+        Assert.Null((await visitor.GetFromJsonAsync<SitePageResponse>("/api/site-pages/about"))!.Content);
+        Assert.Equal(HttpStatusCode.Conflict, (await owner.PutAsJsonAsync("/api/site-pages/home", request)).StatusCode);
+        var reset = await owner.PutAsJsonAsync("/api/site-pages/home", new SaveSitePageRequest { ExpectedRevision = saved.Revision });
+        Assert.Equal(HttpStatusCode.OK, reset.StatusCode);
+        Assert.Null((await visitor.GetFromJsonAsync<SitePageResponse>("/api/site-pages/home"))!.Content);
+        Assert.Equal(HttpStatusCode.Conflict, (await owner.PutAsJsonAsync("/api/site-pages/home", request)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync("/api/site-pages/about", request)).StatusCode);
+    }
+
     private static WebApplicationFactoryClientOptions ClientOptions() => new()
     {
         BaseAddress = new Uri("https://localhost"),

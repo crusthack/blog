@@ -16,8 +16,8 @@ const defaults = {
   description: "Next.js와 ASP.NET Core로 만든 개발자 블로그",
 };
 
-export function getHomeContent(): HomeContent {
-  const source = readFileSync(resolveHomeContentPath(), "utf8").replace(/\r\n/g, "\n");
+export function getHomeContent(page: "home" | "about" = "home"): HomeContent {
+  const source = readFileSync(resolveHomeContentPath(page), "utf8").replace(/\r\n/g, "\n");
   const frontmatter = source.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
 
   if (!frontmatter) {
@@ -40,15 +40,15 @@ export function getHomeContent(): HomeContent {
   };
 }
 
-function resolveHomeContentPath() {
+function resolveHomeContentPath(page: "home" | "about") {
   const candidates = [
-    path.join(process.cwd(), "content", "home.md"),
-    path.join(process.cwd(), "apps", "frontend", "content", "home.md"),
+    path.join(process.cwd(), "content", `${page}.md`),
+    path.join(process.cwd(), "apps", "frontend", "content", `${page}.md`),
   ];
   const matchedPath = candidates.find((candidate) => existsSync(candidate));
 
   if (!matchedPath) {
-    throw new Error("apps/frontend/content/home.md 파일을 찾을 수 없습니다.");
+    throw new Error(`apps/frontend/content/${page}.md 파일을 찾을 수 없습니다.`);
   }
 
   return matchedPath;

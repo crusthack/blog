@@ -147,7 +147,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
         <div className="board-heading-actions">
           {manage && isOwner ? <><Link href={embedded ? "#trash" : "/posts/trash"}>휴지통</Link><Link href={embedded ? "#storage" : "/storage"}>첨부 파일 점검</Link></> : null}
           {categorySlug || manage ? <Link href="/posts">전체 글 보기</Link> : null}
-          {canWrite ? <Link className="board-primary" href="/write">글쓰기</Link> : null}
+          {canWrite ? <Link className="board-primary" href={categorySlug || categoryId ? `/write?${new URLSearchParams({ category: categorySlug || categoryId })}` : "/write"}>글쓰기</Link> : null}
         </div>
       </header>
       <form className="board-filters" role="search" onSubmit={submitSearch}>
