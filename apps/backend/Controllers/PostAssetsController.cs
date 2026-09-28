@@ -24,7 +24,23 @@ public sealed class PostAssetsController(
     private const long MaxPdfFileSize = 25 * 1024 * 1024;
     private const long MaxPixelCount = 40_000_000;
 
-    [Authorize]
+    [AllowAnonymous]
+    [EnableRateLimiting("public-read")]
+    [HttpGet("downloads")]
+    public async Task<ActionResult<IReadOnlyList<PostAssetResponse>>> Downloads(long postNumber, CancellationToken cancellationToken)
+    {
+        var post = await db.Posts.AsNoTracking().Include(item => item.Category)
+            .SingleOrDefaultAsync(item => item.PostNumber == postNumber, cancellationToken);
+        if (post is null || !access.CanRead(post, HttpContext)) return NotFound();
+        Response.Headers.CacheControl = "private, no-store";
+        Response.Headers.Vary = "Cookie";
+        return Ok(await db.PostAssets.AsNoTracking().Where(item => item.PostId == post.Id)
+            .OrderBy(item => item.Name).Select(item => ToResponse(postNumber, item)).ToListAsync(cancellationToken));
+    }
+
+    private static readonly HashSet<string> DocumentExtensions = [".txt", ".md", ".csv", ".json", ".zip", ".7z", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".hwp", ".hwpx"];
+
+    [Authorize(Roles = Roles.Owner)]
     [EnableRateLimiting("community-write")]
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<PostAssetResponse>>> List(
@@ -44,7 +60,7 @@ public sealed class PostAssetsController(
         return Ok(assets);
     }
 
-    [Authorize]
+    [Authorize(Roles = Roles.Owner)]
     [EnableRateLimiting("community-write")]
     [RequestSizeLimit(MaxPdfFileSize + 64 * 1024)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxPdfFileSize + 64 * 1024)]
@@ -65,13 +81,13 @@ public sealed class PostAssetsController(
             return BadRequestProblem("빈 파일은 업로드할 수 없습니다.");
 
         var suppliedExtension = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (suppliedExtension is not ".jpg" and not ".jpeg" and not ".png" and not ".pdf")
-            return BadRequestProblem("JPG, PNG 또는 PDF 파일만 업로드할 수 있습니다.");
+        if (suppliedExtension is not ".jpg" and not ".jpeg" and not ".png" and not ".pdf" && !DocumentExtensions.Contains(suppliedExtension))
+            return BadRequestProblem("지원하지 않는 첨부 파일 형식입니다.");
 
-        var isPdf = suppliedExtension == ".pdf";
-        var maximumSize = isPdf ? MaxPdfFileSize : MaxImageFileSize;
+        var isDocument = suppliedExtension is not (".jpg" or ".jpeg" or ".png");
+        var maximumSize = isDocument ? MaxPdfFileSize : MaxImageFileSize;
         if (file.Length > maximumSize)
-            return BadRequestProblem(isPdf ? "PDF는 25MB 이하여야 합니다." : "이미지는 10MB 이하여야 합니다.");
+            return BadRequestProblem(isDocument ? "문서·압축파일은 25MB 이하여야 합니다." : "이미지는 10MB 이하여야 합니다.");
 
         if (await db.PostAssets.AnyAsync(
                 asset => asset.PostId == postId.Value && asset.Name == normalizedName,
@@ -88,7 +104,7 @@ public sealed class PostAssetsController(
         await using var buffer = new MemoryStream((int)file.Length);
         await input.CopyToAsync(buffer, cancellationToken);
         if (buffer.Length > maximumSize)
-            return BadRequestProblem(isPdf ? "PDF는 25MB 이하여야 합니다." : "이미지는 10MB 이하여야 합니다.");
+            return BadRequestProblem(isDocument ? "문서·압축파일은 25MB 이하여야 합니다." : "이미지는 10MB 이하여야 합니다.");
 
         var uploadedBytes = buffer.ToArray();
         var validation = NormalizeContent(suppliedExtension, uploadedBytes);
@@ -108,7 +124,8 @@ public sealed class PostAssetsController(
             {
                 ".png" => "image/png",
                 ".pdf" => "application/pdf",
-                _ => "image/jpeg",
+                ".jpg" => "image/jpeg",
+                _ => "application/octet-stream",
             },
             Size = storedBytes.LongLength,
         };
@@ -162,10 +179,12 @@ public sealed class PostAssetsController(
         if (asset.ContentType == "application/pdf")
             Response.Headers.ContentSecurityPolicy = "sandbox";
 
+        if (Request.Query["download"] == "1" || asset.ContentType == "application/octet-stream")
+            return PhysicalFile(path, "application/octet-stream", asset.Name + asset.Extension, enableRangeProcessing: true);
         return PhysicalFile(path, asset.ContentType, enableRangeProcessing: true);
     }
 
-    [Authorize]
+    [Authorize(Roles = Roles.Owner)]
     [EnableRateLimiting("community-write")]
     [HttpPatch("{assetId:guid}")]
     public async Task<ActionResult<PostAssetResponse>> Rename(
@@ -204,7 +223,7 @@ public sealed class PostAssetsController(
         return Ok(ToResponse(postNumber, asset));
     }
 
-    [Authorize]
+    [Authorize(Roles = Roles.Owner)]
     [EnableRateLimiting("community-write")]
     [HttpDelete("{assetId:guid}")]
     public async Task<IActionResult> Delete(
@@ -249,6 +268,7 @@ public sealed class PostAssetsController(
 
     private static AssetContentValidation NormalizeContent(string extension, byte[] uploadedBytes)
     {
+        if (DocumentExtensions.Contains(extension)) return AssetContentValidation.Success(extension, uploadedBytes);
         if (extension == ".pdf")
         {
             var tailLength = Math.Min(2048, uploadedBytes.Length);

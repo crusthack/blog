@@ -60,8 +60,8 @@ export type PostDetail = PostSummary & {
 export type PostAsset = {
   id: string;
   name: string;
-  extension: ".jpg" | ".png" | ".pdf";
-  contentType: "image/jpeg" | "image/png" | "application/pdf";
+  extension: string;
+  contentType: string;
   size: number;
   url: string;
   createdAtUtc: string;

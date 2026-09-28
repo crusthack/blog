@@ -25,6 +25,35 @@ public sealed class PostAssetFlowTests
         "%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n");
 
     [Fact]
+    public async Task Document_downloads_are_listed_and_forced_to_attachment()
+    {
+        using var factory = new SetupApiFactory();
+        using var owner = factory.CreateClient(ClientOptions());
+        using var visitor = factory.CreateClient(ClientOptions());
+        await CreateAndLoginOwnerAsync(owner, "document-owner");
+        var post = await CreatePostAsync(owner, "Documents");
+        using var upload = await UploadAsync(owner, post.PostNumber, "<script>alert(1)</script>"u8.ToArray(), "notes.txt", "Notes", "text/html");
+        Assert.Equal(HttpStatusCode.Created, upload.StatusCode);
+        var asset = (await upload.Content.ReadFromJsonAsync<AssetPayload>())!;
+        var route = $"/api/posts/{post.PostNumber}/assets/downloads";
+        var files = (await visitor.GetFromJsonAsync<AssetPayload[]>(route))!;
+        Assert.Single(files);
+        Assert.Equal(asset.Id, files[0].Id);
+        using var download = await visitor.GetAsync(asset.Url);
+        Assert.Equal(HttpStatusCode.OK, download.StatusCode);
+        Assert.Equal("application/octet-stream", download.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("attachment", download.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.Equal("Notes.txt", download.Content.Headers.ContentDisposition.FileNameStar);
+        using var imageUpload = await UploadAsync(owner, post.PostNumber, PngBytes, "photo.png", "Photo", "image/png");
+        var image = (await imageUpload.Content.ReadFromJsonAsync<AssetPayload>())!;
+        using var imageDownload = await visitor.GetAsync(image.Url + "?download=1");
+        Assert.Equal("attachment", imageDownload.Content.Headers.ContentDisposition!.DispositionType);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/posts/{post.PostNumber}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(route)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(asset.Url)).StatusCode);
+    }
+
+    [Fact]
     public async Task Owner_can_manage_supported_assets_and_visitors_can_download_public_assets()
     {
         using var factory = new SetupApiFactory();
@@ -209,7 +238,7 @@ public sealed class PostAssetFlowTests
             owner, post.PostNumber, [], "empty.png", "Empty", "image/png",
             HttpStatusCode.BadRequest);
         await AssertUploadStatusAsync(
-            owner, post.PostNumber, PngBytes, "notes.txt", "Text", "text/plain",
+            owner, post.PostNumber, PngBytes, "script.exe", "Executable", "application/octet-stream",
             HttpStatusCode.BadRequest);
         await AssertUploadStatusAsync(
             owner, post.PostNumber, PngBytes, "mismatch.jpg", "Mismatch", "image/jpeg",

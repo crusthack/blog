@@ -235,14 +235,14 @@ public sealed class CommunityFlowTests
         Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync($"/api/posts/{post.PostNumber}")).StatusCode);
         var other = await Post(owner);
         Assert.Equal(HttpStatusCode.Forbidden, (await member.DeleteAsync($"/api/posts/{other.PostNumber}")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await member.GetAsync($"/api/posts/{other.PostNumber}/assets")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.GetAsync($"/api/posts/{other.PostNumber}/assets")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await member.PostAsync("/api/community/invites", null)).StatusCode);
         var update = new UpdatePostRequest { Title = "Updated", Content = "# Changed", ExpectedRevision = post.Revision };
         Assert.Equal(HttpStatusCode.OK, (await member.PutAsJsonAsync($"/api/posts/{post.PostNumber}", update)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await member.PutAsJsonAsync($"/api/posts/{post.PostNumber}", update)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync($"/api/posts/{other.PostNumber}", update)).StatusCode);
         using var form = new MultipartFormDataContent(); form.Add(new StringContent("attachment"), "name"); form.Add(new ByteArrayContent(System.Text.Encoding.ASCII.GetBytes("%PDF-1.4\nminimal\n%%EOF")), "file", "test.pdf");
-        Assert.Equal(HttpStatusCode.Created, (await member.PostAsync($"/api/posts/{post.PostNumber}/assets", form)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PostAsync($"/api/posts/{post.PostNumber}/assets", form)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await member.DeleteAsync($"/api/posts/{post.PostNumber}")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await member.GetAsync("/api/posts/trash")).StatusCode);
     }

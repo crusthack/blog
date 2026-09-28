@@ -9,7 +9,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BlogFrame } from "@/components/BlogFrame";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { type PostDetail, readProblem, visibilityLabels } from "@/lib/contracts";
+import { type PostDetail, readProblem } from "@/lib/contracts";
+import { PostAttachments } from "./PostAttachments";
 import { postPath } from "@/lib/postPaths";
 import { getMarkdownHeadings } from "@/lib/markdownHeadings";
 import { PostToc } from "@/components/posts/PostToc";
@@ -161,20 +162,13 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
         data-view="post"
       >
         <header className="mb-8 border-b border-gray-200 pb-7 dark:border-gray-700">
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
-            <span>{visibilityLabels[post.visibility]}</span>
-            {post.categoryName && post.categorySlug ? (
-              <Link href={`/categories/${encodeURIComponent(post.categorySlug)}`} className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                {post.categoryName}
-              </Link>
-            ) : null}
-            <span className="text-gray-500">약 {readingMinutes}분</span>
+          <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-xs font-bold">
             <Link href={`${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
             {post.canEdit ? (
               <>
               <Link
                 data-ui="action"
-                className="ml-auto bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-700"
+                className="bg-emerald-600 px-4 py-2 text-sm font-black text-white transition hover:bg-emerald-700"
                 href={`/write/${post.postNumber}`}
               >
                 수정
@@ -184,6 +178,14 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             ) : null}
           </div>
           {deleteError && <p role="alert" className="mb-4 text-red-600">{deleteError}</p>}
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
+            {post.categoryName && post.categorySlug ? (
+              <Link href={`/categories/${encodeURIComponent(post.categorySlug)}`} className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                {post.categoryName}
+              </Link>
+            ) : null}
+            <span className="text-gray-500">약 {readingMinutes}분</span>
+          </div>
           <h1 id="post-title" tabIndex={-1} className="text-4xl font-black tracking-tight md:text-5xl">{post.title}</h1>
           {post.description ? (
             <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>
@@ -193,6 +195,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             <time dateTime={post.createdAtUtc}>작성 {formatDate(post.createdAtUtc)}</time>
             <time dateTime={post.updatedAtUtc}>수정 {formatDate(post.updatedAtUtc)}</time>
           </div>
+          <PostAttachments key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} isOwner={Boolean(user?.isOwner)} />
         </header>
         <div className="post-view-body">
           <div className="post-view-markdown rounded-md p-6">

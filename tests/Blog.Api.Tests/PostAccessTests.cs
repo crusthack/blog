@@ -78,7 +78,10 @@ public sealed class PostAccessTests
         using var visitor = Client(factory);
         var post = await Create(owner, PostVisibility.CodeProtected, "first-code");
         var asset = await Upload(owner, post);
+        var downloads = Route(post) + "/assets/downloads";
+        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(downloads)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await Unlock(visitor, post, "first-code")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await visitor.GetAsync(downloads)).StatusCode);
         await Update(owner, post, PostVisibility.CodeProtected, null);
         Assert.Equal(HttpStatusCode.OK, (await visitor.GetAsync(Route(post))).StatusCode);
         await Update(owner, post, PostVisibility.CodeProtected, "second-code");
@@ -87,6 +90,7 @@ public sealed class PostAccessTests
         Assert.Equal(HttpStatusCode.BadRequest, (await Unlock(visitor, post, "first-code")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await Unlock(visitor, post, "second-code")).StatusCode);
         await Update(owner, post, PostVisibility.Private, null);
+        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(downloads)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync(Route(post))).StatusCode);
         await Update(owner, post, PostVisibility.CodeProtected, "second-code");
         Assert.Equal(HttpStatusCode.Forbidden, (await visitor.GetAsync(Route(post))).StatusCode);

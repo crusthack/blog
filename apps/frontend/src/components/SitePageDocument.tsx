@@ -52,12 +52,11 @@ export function SitePageDocument(props: Props) {
   }
 
   return <article className="legacy-home-document post-view" data-view="post">
-    {user?.isOwner && <div className="mb-6 flex flex-wrap items-center gap-3">
+    {user?.isOwner && <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
       <button data-ui="action" className="border px-4 py-2" disabled={busy || !props.available} onClick={() => {
         if (editing && dirty && !window.confirm("저장하지 않은 수정을 취소할까요?")) return;
         setDraft(content); setEditing(!editing); setMessage("");
       }}>{editing ? "수정 취소" : "수정"}</button>
-      <span className="text-sm text-gray-500">{overridden ? "웹에서 저장한 내용 사용 중" : "코드 기본값 사용 중"}</span>
       {!props.available && <p role="alert">저장 서버에 연결하지 못했습니다. 기본 내용을 표시합니다. 수정하려면 새로고침해 주세요.</p>}
     </div>}
     {message && <p role="status" className="mb-4">{message}</p>}

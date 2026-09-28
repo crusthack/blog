@@ -397,17 +397,17 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
           </div>
           </form>
 
-          {postNumber ? (
+          {user.isOwner ? postNumber ? (
             <PostAssetManager postNumber={postNumber} onInsertMarkdown={insertAssetMarkdown} />
           ) : (
             <section data-ui="panel" className="bg-white p-5 sm:p-6 dark:bg-[#252525]">
               <p className="text-sm font-black tracking-[0.16em] text-emerald-600">POST ASSETS</p>
-              <h2 className="mt-2 text-2xl font-black">이미지·PDF 첨부</h2>
+              <h2 className="mt-2 text-2xl font-black">첨부 파일</h2>
               <p data-ui="notice" className="mt-4 bg-amber-50 p-4 text-sm font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                 첨부 파일은 글을 먼저 저장한 뒤 편집 화면에서 추가할 수 있습니다.
               </p>
             </section>
-          )}
+          ) : null}
         </div>
 
         <section data-ui="panel" className="editor-preview-pane post-view min-h-[500px] min-w-0 overflow-auto bg-white p-5 sm:p-7 dark:bg-[#252525]">

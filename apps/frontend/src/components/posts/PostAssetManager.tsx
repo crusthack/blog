@@ -5,10 +5,10 @@ import { type PostAsset, readProblem } from "@/lib/contracts";
 
 type PostAssetManagerProps = {
   postNumber: string;
-  onInsertMarkdown: (markdown: string) => void;
+  onInsertMarkdown?: (markdown: string) => void;
 };
 
-const acceptedExtensions = new Set(["jpg", "jpeg", "png", "pdf"]);
+const acceptedExtensions = new Set(["jpg", "jpeg", "png", "pdf", "txt", "md", "csv", "json", "zip", "7z", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "hwp", "hwpx"]);
 const maxImageFileSize = 10 * 1024 * 1024;
 const maxPdfFileSize = 25 * 1024 * 1024;
 
@@ -90,21 +90,21 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
     if (!acceptedExtensions.has(extension)) {
       setFile(null);
       event.target.value = "";
-      setError("JPG, PNG 또는 PDF 파일만 선택할 수 있습니다.");
+      setError("지원하지 않는 파일 형식입니다. 이미지·문서·압축파일을 선택해 주세요.");
       return;
     }
 
-    const maximumSize = extension === "pdf" ? maxPdfFileSize : maxImageFileSize;
+    const maximumSize = ["jpg", "jpeg", "png"].includes(extension) ? maxImageFileSize : maxPdfFileSize;
     if (selected.size > maximumSize) {
       setFile(null);
       event.target.value = "";
-      setError(extension === "pdf" ? "PDF는 25MB 이하여야 합니다." : "이미지는 10MB 이하여야 합니다.");
+      setError(["jpg", "jpeg", "png"].includes(extension) ? "이미지는 10MB 이하여야 합니다." : "문서·압축파일은 25MB 이하여야 합니다.");
       return;
     }
 
     setFile(selected);
     setName(selected.name.replace(/\.[^.]+$/, ""));
-    if (extension !== "pdf") {
+    if (["jpg", "jpeg", "png"].includes(extension)) {
       const nextPreviewUrl = URL.createObjectURL(selected);
       previewUrlRef.current = nextPreviewUrl;
       setPreviewUrl(nextPreviewUrl);
@@ -133,6 +133,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
       clearSelectedFile();
       setMessage("첨부 파일을 업로드했습니다.");
       await loadAssets();
+      window.dispatchEvent(new Event("post-assets-updated"));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "첨부 파일을 업로드하지 못했습니다.");
     } finally {
@@ -163,6 +164,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
       }
       setMessage("첨부 파일 이름을 변경했습니다.");
       await loadAssets();
+      window.dispatchEvent(new Event("post-assets-updated"));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "첨부 파일 이름을 변경하지 못했습니다.");
     } finally {
@@ -186,6 +188,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
       }
       setMessage("첨부 파일을 삭제했습니다.");
       await loadAssets();
+      window.dispatchEvent(new Event("post-assets-updated"));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "첨부 파일을 삭제하지 못했습니다.");
     } finally {
@@ -205,7 +208,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
   }
 
   function insertMarkdown(asset: PostAsset) {
-    onInsertMarkdown(markdownForAsset(asset));
+    onInsertMarkdown?.(markdownForAsset(asset));
     setError("");
     setMessage("현재 커서 위치에 Markdown 문법을 삽입했습니다.");
   }
@@ -214,9 +217,9 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
     <section data-ui="panel" className="min-w-0 bg-white p-5 sm:p-6 dark:bg-[#252525]">
       <div className="mb-5">
         <p className="text-sm font-black tracking-[0.16em] text-emerald-600">POST ASSETS</p>
-        <h2 className="mt-2 text-2xl font-black">이미지·PDF 첨부</h2>
+        <h2 className="mt-2 text-2xl font-black">첨부 파일 관리</h2>
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          JPG·PNG는 10MB, PDF는 25MB까지 올리고 본문의 현재 커서 위치에 Markdown으로 삽입할 수 있습니다.
+          관리자만 첨부할 수 있습니다. JPG·PNG는 10MB, PDF·텍스트·Office·한글 문서·ZIP·7Z는 25MB까지 지원합니다. 첨부하면 글의 다운로드 목록에 바로 표시됩니다.
         </p>
       </div>
 
@@ -235,7 +238,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
         <label className="block">
           <span className="mb-2 block text-sm font-bold">파일</span>
           <input
-            accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
+            accept={Array.from(acceptedExtensions, extension => `.${extension}`).join(",")}
             className="block w-full text-sm file:mr-3 file:border-0 file:bg-gray-100 file:px-3 file:py-2 file:font-bold dark:file:bg-gray-700 dark:file:text-gray-100"
             disabled={activeAction !== null}
             onChange={selectFile}
@@ -270,7 +273,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
               />
             ) : (
               <span className="flex h-20 w-28 shrink-0 items-center justify-center bg-red-50 font-black text-red-700 dark:bg-red-950/40 dark:text-red-300">
-                PDF
+                파일
               </span>
             )}
             <div className="min-w-0">
@@ -324,7 +327,7 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
               const isWorking = activeAction === asset.id;
               return (
                 <article className="min-w-0 overflow-hidden border border-gray-200 dark:border-gray-700" key={asset.id}>
-                  {assetUrl && !isPdf ? (
+                  {assetUrl && asset.contentType.startsWith("image/") ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       alt={asset.name}
@@ -356,7 +359,8 @@ export function PostAssetManager({ postNumber, onInsertMarkdown }: PostAssetMana
                       </a>
                     ) : null}
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <button className={smallButtonClass} disabled={isWorking || activeAction !== null} onClick={() => insertMarkdown(asset)} type="button">
+                      <button className={smallButtonClass} disabled={isWorking || activeAction !== null} onClick={() => insertMarkdown(asset)}
+                        hidden={!onInsertMarkdown} type="button">
                         본문에 삽입
                       </button>
                       <button className={smallButtonClass} disabled={isWorking || activeAction !== null} onClick={() => void copyMarkdown(asset)} type="button">
@@ -391,7 +395,7 @@ function markdownForAsset(asset: PostAsset) {
   const source = isPdfAsset(asset) ? withPdfFormat(asset.url) : asset.url;
   const escapedName = asset.name.replaceAll("\\", "\\\\").replaceAll("]", "\\]");
   const escapedSource = source.replaceAll("<", "%3C").replaceAll(">", "%3E");
-  return `![${escapedName}](<${escapedSource}>)`;
+  return `${isPdfAsset(asset) || asset.contentType.startsWith("image/") ? "!" : ""}[${escapedName}](<${escapedSource}>)`;
 }
 
 function withPdfFormat(url: string) {

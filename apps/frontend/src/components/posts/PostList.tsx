@@ -198,7 +198,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
               <caption className="sr-only">{manage ? "게시글 전체 관리 목록" : "게시글 목록"}</caption>
               <thead><tr>
                 <th scope="col" className="board-number">번호</th><th scope="col" className="board-category">분류</th>
-                <th scope="col" className="board-title">제목</th><th scope="col">작성자</th><th scope="col" className="board-visibility">공개 범위</th>
+                <th scope="col" className="board-title">제목</th><th scope="col">작성자</th>{manage ? <th scope="col" className="board-visibility">공개 범위</th> : null}
                 <th scope="col" className="board-date">{showUpdated ? "수정일" : "작성일"}</th>
                 {manage && isOwner ? <th scope="col" className="board-priority">우선순위</th> : null}
                 {manage ? <th scope="col" className="board-actions">관리</th> : null}
@@ -208,7 +208,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
                   <td className="board-number">{post.postNumber}</td>
                   <td className="board-category"><span title={post.categoryName ?? "미분류"}>{post.categoryName ?? "미분류"}</span></td>
                   <td className="board-title"><Link href={postPath(post)} title={post.title}>{post.title}</Link></td><td>{post.authorName}</td>
-                  <td className="board-visibility"><span data-visibility={post.visibility}>{visibilityLabels[post.visibility]}</span></td>
+                  {manage ? <td className="board-visibility"><span data-visibility={post.visibility}>{visibilityLabels[post.visibility]}</span></td> : null}
                   <td className="board-date"><time dateTime={dateOf(post)}>
                     {formatDate(dateOf(post))}
                   </time></td>
@@ -225,7 +225,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
                       onClick={() => void deletePost(post)}>{deleting === post.postNumber ? "삭제 중" : "삭제"}</button>
                   </div></td> : null}
                 </tr>)}
-                {visiblePosts.length === 0 ? <tr><td colSpan={manage ? (isOwner ? 8 : 7) : 6} className="board-empty">
+                {visiblePosts.length === 0 ? <tr><td colSpan={manage ? (isOwner ? 8 : 7) : 5} className="board-empty">
                   {search || categoryId || visibility ? "조건에 맞는 글이 없습니다." : "등록된 글이 없습니다."}
                 </td></tr> : null}
               </tbody>
