@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BlogFrame } from "@/components/BlogFrame";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { type PostDetail, readProblem } from "@/lib/contracts";
+import { type PostDetail, effectivePostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
 import { PostAttachments } from "./PostAttachments";
 import { postPath } from "@/lib/postPaths";
 import { getMarkdownHeadings } from "@/lib/markdownHeadings";
@@ -129,6 +129,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
       <BlogFrame rightSidebar={<p>접근 코드를 입력하면 본문 목차가 표시됩니다.</p>}>
         <section className="post-view p-8 md:p-12">
           <h1 className="text-3xl font-bold">{lockedTitle}</h1>
+          <p className="mt-2 text-sm">공개 범위 · {visibilityLabels.CodeProtected}</p>
           <p className="mt-4">접근 코드를 입력하면 본문과 첨부 파일을 12시간 동안 볼 수 있습니다.</p>
           <form onSubmit={unlock} className="mt-6 max-w-md space-y-4">
             <label className="block font-bold">접근 코드
@@ -191,6 +192,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>
           ) : null}
           <div className="mt-5 flex flex-wrap gap-4 text-sm text-gray-500">
+            <span>공개 범위 · {visibilityLabels[effectivePostVisibility(post)]}{post.categoryIsHidden && " (카테고리 숨김)"}</span>
             {post.authorName && <span>작성자 {post.authorName}</span>}
             <time dateTime={post.createdAtUtc}>작성 {formatDate(post.createdAtUtc)}</time>
             <time dateTime={post.updatedAtUtc}>수정 {formatDate(post.updatedAtUtc)}</time>
