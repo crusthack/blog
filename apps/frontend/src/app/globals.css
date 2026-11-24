@@ -423,6 +423,15 @@ summary {
   word-break: break-word;
 }
 
+[data-view="post"] .markdown-body {
+  font-size: clamp(1.125rem, 1rem + 0.4vw, 1.3125rem);
+  line-height: 1.8;
+}
+
+[data-view="post"] .markdown-body :is(pre, :not(pre) > code, kbd) {
+  font-size: 0.92em;
+}
+
 .markdown-body::before,
 .markdown-body::after {
   display: table;

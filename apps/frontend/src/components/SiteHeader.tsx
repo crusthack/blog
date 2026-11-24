@@ -200,7 +200,6 @@ export function SiteHeader() {
           </div>
 
           <div className={`flex items-center gap-1 sm:gap-2 ${hasShortcuts ? "min-w-0 justify-end max-lg:flex-wrap max-lg:py-2" : "shrink-0"}`}>
-            <ThemeToggle />
             <details
               className="group/public-menu relative lg:hidden"
               onToggle={(event) => {
@@ -241,6 +240,7 @@ export function SiteHeader() {
               </div>
             </details>
             <div className={`flex min-w-0 items-center gap-1 sm:gap-2 ${hasShortcuts ? "max-lg:order-last max-lg:basis-full max-lg:justify-end" : ""}`}>
+              <ThemeToggle />
               <Link
                 className="site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold transition sm:px-3"
                 href="/about"
@@ -474,8 +474,9 @@ function ThemeToggle() {
 
   return (
     <button
-      aria-label={theme === "dark" ? "라이트 모드로 전환" : "다크 모드로 전환"}
-      className="site-nav-link flex h-10 w-10 items-center justify-center text-lg transition"
+      aria-label="다크 모드"
+      aria-pressed={theme === "dark"}
+      className="site-nav-link flex size-10 shrink-0 items-center justify-center rounded-full border border-current/30 text-xl transition"
       onClick={toggleTheme}
       title={theme === "dark" ? "라이트 모드" : "다크 모드"}
       type="button"

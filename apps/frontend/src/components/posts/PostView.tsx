@@ -160,7 +160,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
   return (
     <BlogFrame rightSidebar={<PostToc headings={headings} />}>
       <article
-        className="post-view min-h-screen w-full rounded-2xl border border-gray-200 p-8 shadow-sm dark:border-gray-700 md:p-12"
+        className="post-view min-h-screen w-full rounded-2xl border border-gray-200 px-4 py-8 shadow-sm dark:border-gray-700 md:p-12"
         data-view="post"
       >
         <header className="mb-8 border-b border-gray-200 pb-7 dark:border-gray-700">
@@ -187,11 +187,11 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
               </Link>
             </div>
           )}
-          <h1 id="post-title" tabIndex={-1} className="text-4xl font-black tracking-tight md:text-5xl">{post.title}</h1>
+          <h1 id="post-title" tabIndex={-1} className="text-[clamp(2.375rem,4vw,3.5rem)] leading-tight font-black tracking-tight">{post.title}</h1>
           {post.description ? (
-            <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>
+            <p className="mt-4 text-xl leading-relaxed md:text-2xl text-gray-600 dark:text-gray-300">{post.description}</p>
           ) : null}
-          <div className="mt-5 flex flex-wrap gap-4 text-sm text-gray-500">
+          <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-base text-gray-500">
             <span>공개 범위 · {visibilityLabels[effectivePostVisibility(post)]}{post.categoryIsHidden && " (카테고리 숨김)"}</span>
             {post.authorName && <span>작성자 {post.authorName}</span>}
             <time dateTime={post.createdAtUtc}>작성 {formatDate(post.createdAtUtc)}</time>
@@ -200,7 +200,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
           <PostAttachments key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} isOwner={Boolean(user?.isOwner)} />
         </header>
         <div className="post-view-body">
-          <div className="post-view-markdown rounded-md p-6">
+          <div className="post-view-markdown rounded-md py-4 md:p-6">
             <MarkdownContent source={post.content} />
           </div>
         </div>
