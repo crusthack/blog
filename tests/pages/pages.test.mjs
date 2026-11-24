@@ -38,7 +38,7 @@ test('exports standalone HTML, copied attachments, project base paths and safe M
   const { result, outputDirectory } = await build(f);
   assert.equal(result.changed, true);
   assert.equal(result.latestPostUpdatedAtUtc, f.post.updatedAtUtc);
-  const html = await readFile(path.join(outputDirectory, 'posts/network/7/index.html'), 'utf8');
+  const html = await readFile(path.join(outputDirectory, 'posts/network/7/view.json'), 'utf8').then(json => JSON.parse(json).html);
   assert.match(html, /href="\/blog\/about\/"/);
   assert.match(html, /href="\/blog\/posts\/network\/7\/"/);
   assert.match(html, /src="\/blog\/static\/assets\/7\//);
@@ -48,7 +48,7 @@ test('exports standalone HTML, copied attachments, project base paths and safe M
   assert.match(html, /id="heading-tcp"/);
   assert.match(html, /href="#heading-tcp"/);
   assert.deepEqual(await readFile(path.join(outputDirectory, `static/assets/7/${assetId}.txt`)), f.bytes);
-  assert.match(await readFile(path.join(outputDirectory, 'about/index.html'), 'utf8'), /웹에서 저장한 소개/);
+  assert.match(await readFile(path.join(outputDirectory, 'about/view.json'), 'utf8').then(json => JSON.parse(json).html), /웹에서 저장한 소개/);
   assert.match(await readFile(path.join(outputDirectory, 'sitemap.xml'), 'utf8'), /https:\/\/user.github.io\/blog\/posts\/network\/7\//);
   assert.equal((await readdir(outputDirectory)).includes('.nojekyll'), true);
 });
@@ -84,7 +84,7 @@ test('removing a public post removes its HTML from a new export', async () => {
   const next = await build(f, { previous: first.result });
   assert.equal(next.result.changed, true);
   assert.equal(next.result.postCount, 0);
-  await assert.rejects(readFile(path.join(next.outputDirectory, 'posts/network/7/index.html')), { code: 'ENOENT' });
+  await assert.rejects(readFile(path.join(next.outputDirectory, 'posts/network/7/view.json')), { code: 'ENOENT' });
 });
 
 test('refuses partial exports, private/code-protected/hidden posts, and inconsistent pagination', async () => {
@@ -148,5 +148,5 @@ test('supports root and project Pages URLs and rejects path traversal', async ()
   assert.equal(basePath('/blog/'), '/blog');
   assert.throws(() => basePath('/../blog'), /Invalid/);
   const { outputDirectory } = await build(fixture(), { pagesUrl: 'https://user.github.io/' });
-  assert.match(await readFile(path.join(outputDirectory, 'posts/index.html'), 'utf8'), /href="\/posts\/network\/7\/"/);
+  assert.match(await readFile(path.join(outputDirectory, 'posts/view.json'), 'utf8').then(json => JSON.parse(json).html), /href="\/posts\/network\/7\/"/);
 });
