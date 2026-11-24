@@ -136,7 +136,8 @@ export function SiteHeader() {
         aria-label="주요 메뉴"
         className={`site-nav w-full border-b border-gray-200 bg-gray-50 transition-colors dark:border-gray-800 dark:bg-[#292929] ${hasShortcuts ? "lg:h-16" : "h-16"}`}
       >
-        <div className={`mx-auto w-full max-w-[1200px] items-center px-2 sm:px-6 ${hasShortcuts
+        <div className="site-nav-layout h-full">
+        <div className={`items-center ${hasShortcuts
           ? "grid grid-cols-[auto_minmax(0,1fr)] lg:h-full lg:grid-cols-[minmax(0,1fr)_auto]"
           : "flex h-full justify-between"}`}>
           <div className={`flex min-w-0 items-center gap-0 ${hasShortcuts ? "max-lg:self-start max-lg:pt-2" : ""}`}>
@@ -375,6 +376,7 @@ export function SiteHeader() {
               </AppLink>
             )}
           </div>
+        </div>
         </div>
       </nav>
     </header>
