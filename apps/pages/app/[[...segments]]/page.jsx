@@ -1,5 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import PublicPage from "../PublicPage";
+import shared from "../../data/shared.json";
 import routes from '../../data/routes.json';
 
 export const dynamicParams = false;
@@ -21,6 +23,5 @@ export async function generateMetadata({ params }) {
 }
 
 export default async function Page({ params }) {
-  const { html } = await view(params);
-  return <div dangerouslySetInnerHTML={{ __html: html }} />;
+  return <PublicPage shared={shared} view={await view(params)} />;
 }

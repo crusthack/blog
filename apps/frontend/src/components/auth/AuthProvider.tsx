@@ -1,4 +1,5 @@
 "use client";
+import { usePublished } from "@/components/PublishedContext";
 
 import { useRouter } from "next/navigation";
 import {
@@ -22,11 +23,13 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const published = usePublished();
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!published);
 
   useEffect(() => {
+    if (published) return;
     const controller = new AbortController();
     void fetch("/api/auth/me", {
       cache: "no-store",
@@ -48,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [published]);
 
   const login = useCallback(async (username: string, password: string) => {
     const response = await fetch("/api/auth/login", {

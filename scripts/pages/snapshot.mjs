@@ -64,7 +64,8 @@ export async function collectSnapshot(read) {
   posts.sort((a, b) => a.postNumber - b.postNumber);
   const pages = {};
   for (const page of ['home', 'about']) pages[page] = await read(`/api/site-pages/${page}`);
-  return { categories, posts, pages };
+  const externalLinks = await read('/api/site-settings/external-links');
+  return { categories, posts, pages, externalLinks };
 }
 
 export function assertStable(before, after) {

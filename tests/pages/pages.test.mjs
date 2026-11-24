@@ -19,6 +19,7 @@ function fixture() {
   const asset = { id: assetId, url: assetUrl, name: '첨부', extension: '.txt', size: bytes.length, updatedAtUtc: post.updatedAtUtc };
   const data = {
     '/api/categories': [category],
+    '/api/site-settings/external-links': [],
     '/api/posts/directory?visibility=Public&sort=updated&direction=asc&page=1': { total: 1, page: 1, pageSize: 20, items: [post] },
     '/api/posts/7': post,
     '/api/posts/7/assets/downloads': [asset],
@@ -38,17 +39,15 @@ test('exports standalone HTML, copied attachments, project base paths and safe M
   const { result, outputDirectory } = await build(f);
   assert.equal(result.changed, true);
   assert.equal(result.latestPostUpdatedAtUtc, f.post.updatedAtUtc);
-  const html = await readFile(path.join(outputDirectory, 'posts/network/7/view.json'), 'utf8').then(json => JSON.parse(json).html);
-  assert.match(html, /href="\/blog\/about\/"/);
-  assert.match(html, /href="\/blog\/posts\/network\/7\/"/);
-  assert.match(html, /src="\/blog\/static\/assets\/7\//);
-  assert.match(html, /TCP &lt;script&gt;/);
-  assert.doesNotMatch(html, /<script>|javascript:|fetch\(/);
-  assert.match(html, /<table>/);
-  assert.match(html, /id="heading-tcp"/);
-  assert.match(html, /href="#heading-tcp"/);
+  const view = JSON.parse(await readFile(path.join(outputDirectory,'posts/network/7/view.json')));
+  const shared = JSON.parse(await readFile(path.join(outputDirectory,'shared.json')));
+  assert.equal(view.post.content, f.post.content);
+  assert.equal(shared.links['/about'], '/blog/about/');
+  assert.equal(shared.links['/posts/7'], '/blog/posts/network/7/');
+  assert.equal(view.assets[0].url, '/blog/static/assets/7/' + assetId + '.txt');
+  assert.equal(shared.posts[0].content, undefined);
   assert.deepEqual(await readFile(path.join(outputDirectory, `static/assets/7/${assetId}.txt`)), f.bytes);
-  assert.match(await readFile(path.join(outputDirectory, 'about/view.json'), 'utf8').then(json => JSON.parse(json).html), /웹에서 저장한 소개/);
+  assert.match(await readFile(path.join(outputDirectory, 'about/view.json'), 'utf8'), /웹에서 저장한 소개/);
   assert.match(await readFile(path.join(outputDirectory, 'sitemap.xml'), 'utf8'), /https:\/\/user.github.io\/blog\/posts\/network\/7\//);
   assert.equal((await readdir(outputDirectory)).includes('.nojekyll'), true);
 });
@@ -148,5 +147,5 @@ test('supports root and project Pages URLs and rejects path traversal', async ()
   assert.equal(basePath('/blog/'), '/blog');
   assert.throws(() => basePath('/../blog'), /Invalid/);
   const { outputDirectory } = await build(fixture(), { pagesUrl: 'https://user.github.io/' });
-  assert.match(await readFile(path.join(outputDirectory, 'posts/view.json'), 'utf8').then(json => JSON.parse(json).html), /href="\/posts\/network\/7\/"/);
+  assert.equal(JSON.parse(await readFile(path.join(outputDirectory,'shared.json'))).links['/posts/7'], '/posts/network/7/');
 });

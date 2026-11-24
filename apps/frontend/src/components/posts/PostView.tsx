@@ -1,4 +1,5 @@
 "use client";
+import { usePublished } from "@/components/PublishedContext";
 
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { PostDiscussion } from "./PostDiscussion";
@@ -26,9 +27,10 @@ export function PostView({ postNumber, slideMode = false }: { postNumber: string
 }
 
 function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode: boolean }) {
+  const published = usePublished();
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [post, setPost] = useState<PostDetail | null>(null);
+  const [post, setPost] = useState<PostDetail | null>(published?.post ?? null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [error, setError] = useState("");
@@ -40,7 +42,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
   const headings = useMemo(() => post ? getMarkdownHeadings(post.content) : [], [post]);
 
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (published || isAuthLoading) return;
     const controller = new AbortController();
     function normalizePostPath(data: { postNumber: number; categorySlug: string | null }) {
       if (controller.signal.aborted) return;
@@ -77,7 +79,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
         setError(reason instanceof Error ? reason.message : "글을 불러오지 못했습니다.");
       });
     return () => controller.abort();
-  }, [isAuthLoading, postNumber, reload, router, slideMode]);
+  }, [isAuthLoading, postNumber, reload, router, slideMode, published]);
 
   async function deletePost() {
     if (!post || deleting || !window.confirm(`“${post.title}” 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관됩니다.`)) return;
@@ -161,7 +163,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
       >
         <header className="mb-8 border-b border-gray-200 pb-7 dark:border-gray-700">
           <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-xs font-bold">
-            <Link href={`${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
+            <Link href={`${published?.origin ?? ""}${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
             {post.canEdit ? (
               <>
               <Link
@@ -200,7 +202,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
           </div>
         </div>
         <PostReadingActions categorySlug={post.categorySlug} />
-        <PostDiscussion key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} />
+        {published ? <div data-live-comments /> : <PostDiscussion key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} />}
       </article>
     </BlogFrame>
   );

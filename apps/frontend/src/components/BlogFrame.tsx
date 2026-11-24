@@ -1,4 +1,5 @@
 "use client";
+import { usePublished } from "@/components/PublishedContext";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -9,14 +10,15 @@ import { usefulSiteLinks } from "@/lib/siteLinks";
 import { postPath } from "@/lib/postPaths";
 
 export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rightSidebar?: ReactNode }) {
+  const published = usePublished();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [posts, setPosts] = useState<PostSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>(published?.categories ?? []);
+  const [posts, setPosts] = useState<PostSummary[]>(published?.posts ?? []);
+  const [isLoading, setIsLoading] = useState(!published);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (published || isAuthLoading) return;
 
     const controller = new AbortController();
     let active = true;
@@ -60,7 +62,7 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [isAuthLoading, user]);
+  }, [isAuthLoading, user, published]);
 
   const recentPosts = useMemo(
     () => [...posts].sort(compareNewest).slice(0, 4),

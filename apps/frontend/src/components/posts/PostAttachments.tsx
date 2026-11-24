@@ -1,15 +1,18 @@
 "use client";
+import { usePublished } from "@/components/PublishedContext";
 
 import { useEffect, useState } from "react";
 import { type PostAsset, readProblem } from "@/lib/contracts";
 import { PostAssetManager } from "./PostAssetManager";
 
 export function PostAttachments({ postNumber, isOwner }: { postNumber: number; isOwner: boolean }) {
-  const [assets, setAssets] = useState<PostAsset[]>([]);
+  const published = usePublished();
+  const [assets, setAssets] = useState<PostAsset[]>(published?.assets ?? []);
   const [error, setError] = useState("");
   const [managing, setManaging] = useState(false);
   const [reload, setReload] = useState(0);
   useEffect(() => {
+    if (published) return;
     const controller = new AbortController();
     void fetch(`/api/posts/${postNumber}/assets/downloads`, { credentials: "include", cache: "no-store", signal: controller.signal })
       .then(async response => {
@@ -21,7 +24,7 @@ export function PostAttachments({ postNumber, isOwner }: { postNumber: number; i
     const refresh = () => setReload(value => value + 1);
     window.addEventListener("post-assets-updated", refresh);
     return () => { controller.abort(); window.removeEventListener("post-assets-updated", refresh); };
-  }, [postNumber, reload]);
+  }, [postNumber, reload, published]);
 
   if (!isOwner && assets.length === 0 && !error) return null;
   return <section aria-label="첨부 파일" className="mt-5 rounded-md border border-gray-200 bg-gray-50 p-4 text-sm dark:border-gray-700 dark:bg-gray-800/60">

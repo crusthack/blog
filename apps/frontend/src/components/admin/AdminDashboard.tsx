@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { AdminDrive } from "./AdminDrive";
 import { MarkdownFolderImport } from "./MarkdownFolderImport";
+import { PagesDeployButton } from "./PagesDeployButton";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { PostList } from "@/components/posts/PostList";
@@ -102,7 +103,7 @@ function OverviewPanel({ active }: { active: boolean }) {
     return () => controller.abort();
   }, [active, refresh]);
   return <section>
-    <div className="admin-section-heading"><h2>전체 현황</h2><button disabled={loading} type="button" onClick={() => { setLoading(true); setRefresh(value => value + 1); }}>{loading ? "확인 중…" : "현황 새로고침"}</button></div>
+    <div className="admin-section-heading"><h2>전체 현황</h2><PagesDeployButton /><button disabled={loading} type="button" onClick={() => { setLoading(true); setRefresh(value => value + 1); }}>{loading ? "확인 중…" : "현황 새로고침"}</button></div>
     {error && <p className="board-notice board-error" role="alert">{error}</p>}
     {overview && <>
       <p className="admin-updated">{new Date(overview.checkedAtUtc).toLocaleString("ko-KR")} 기준 · 휴지통 글은 게시글 수에서 제외됩니다.</p>

@@ -1,4 +1,5 @@
 "use client";
+import { usePublished } from "@/components/PublishedContext";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -27,11 +28,12 @@ export function PostList({ categorySlug, manage = false, bookmarked = false, emb
 }
 
 function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwner, canWrite }: DirectoryProps) {
+  const published = usePublished();
   const Heading = embedded ? "h2" : "h1";
-  const [total, setTotal] = useState(0);
+  const [serverTotal, setTotal] = useState(0);
   const [posts, setPosts] = useState<PostSummary[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [categories, setCategories] = useState<Category[]>(published?.categories ?? []);
+  const [isLoading, setIsLoading] = useState(!published);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [message, setMessage] = useState("");
@@ -48,6 +50,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   const [deleting, setDeleting] = useState<number | null>(null);
 
   useEffect(() => {
+    if (published) return;
     const controller = new AbortController();
     async function load() {
       try {
@@ -74,7 +77,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
     }
     void load();
     return () => controller.abort();
-  }, [reload, page, search, sort, direction, categorySlug, categoryId, visibility, mine, bookmarked]);
+  }, [reload, page, search, sort, direction, categorySlug, categoryId, visibility, mine, bookmarked, published]);
 
   useEffect(() => {
     const refresh = () => setReload(value => value + 1);
@@ -86,11 +89,18 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   const parentCategory = activeCategory?.parentId && categories.find(category => category.id === activeCategory.parentId);
   const childCategories = activeCategory ? categories.filter(category => category.parentId === activeCategory.id) : [];
   const missingCategory = Boolean(categorySlug && !isLoading && !loadError && !activeCategory);
+  const matches = published?.posts.filter(p => (!(categorySlug || categoryId) || p.categorySlug === (categorySlug || categoryId)) &&
+    (!search || (p.title + " " + (p.description ?? "")).toLowerCase().includes(search.toLowerCase()))).sort((a,b) => {
+      const order = sort === "title" ? a.title.localeCompare(b.title, "ko") : sort === "priority" ? (a.priority ?? 0) - (b.priority ?? 0) :
+        (sort === "updated" ? a.updatedAtUtc : a.createdAtUtc ?? "").localeCompare(sort === "updated" ? b.updatedAtUtc : b.createdAtUtc ?? "");
+      return (direction === "desc" ? -order : order) || b.postNumber - a.postNumber;
+    });
+  const total = matches?.length ?? serverTotal;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = page;
   const showUpdated = sort === "updated" || (manage && sort !== "created");
   const dateOf = (post: PostSummary) => showUpdated ? post.updatedAtUtc : post.createdAtUtc ?? post.publishedAtUtc ?? post.updatedAtUtc;
-  const visiblePosts = posts;
+  const visiblePosts = matches?.slice((page-1)*pageSize,page*pageSize) ?? posts;
   const firstPage = Math.max(1, Math.min(currentPage - 2, pageCount - 4));
   const pageNumbers = Array.from({ length: Math.min(5, pageCount) }, (_, index) => firstPage + index);
 

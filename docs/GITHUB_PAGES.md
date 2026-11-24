@@ -76,3 +76,12 @@ npm run build:pages
 
 테스트는 공개 범위, 수집 중 변경, 페이지 나누기 일관성, 삭제 반영, 첨부 복사·무결성,
 해시 비교, 루트·프로젝트 경로, Markdown 안전 렌더링과 API 오류 처리를 검증한다.
+
+
+## 운영 화면과 배포 요청
+
+Pages는 운영 프런트의 SiteHeader, SiteFooter, BlogFrame, PostList, SitePageDocument, PostView를 공유한다.
+공개 데이터는 빌드 시 익명 API로 수집한다. 글 하단에서 댓글 보기를 누르면 운영 API를 조회하며, 회원 작업은 운영 도메인에서 진행한다.
+사이트 관리 → 전체 현황 → Pages 즉시 배포는 Owner 전용이다. EC2의 /etc/blog/deploy.env에
+`export PAGES_DISPATCH_TOKEN=...`을 설정한 뒤 backend 컨테이너를 다시 생성한다. 토큰은 crusthack/blog에 대한 Actions 쓰기 권한이 필요하다.
+버튼은 main의 pages.yml을 force로 실행하고, 배포 기록 링크에서 결과를 확인한다.

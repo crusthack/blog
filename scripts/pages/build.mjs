@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { JSON_SCHEMA, load } from 'js-yaml';
 import { assertStable, basePath, canonical, collectSnapshot, createReader, digest, postPath } from './snapshot.mjs';
-import { createRenderer, escapeHtml } from './render.mjs';
+const escapeHtml = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;');
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -59,33 +59,44 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   const files = ['package-lock.json', 'apps/frontend/content/home.md', 'apps/frontend/content/about.md', 'apps/frontend/src/lib/markdownHeadings.ts', 'apps/frontend/src/lib/siteLinks.ts',
     ...['globals','slides','community','admin'].map(name => `apps/frontend/src/app/${name}.css`),
     ...(await readdir(path.join(root, 'scripts/pages'))).sort().map(name => `scripts/pages/${name}`)];
-  for (const entry of await readdir(path.join(root,'apps/pages'), {recursive:true,withFileTypes:true})) {
-    if (entry.isFile()) files.push(path.relative(root,path.join(entry.parentPath,entry.name)));
+  for (const folder of ['apps/pages','apps/frontend/src/components','apps/frontend/src/lib']) {
+    for (const entry of await readdir(path.join(root,folder), {recursive:true,withFileTypes:true})) {
+      if (entry.isFile()) files.push(path.relative(root,path.join(entry.parentPath,entry.name)));
+    }
   }
   const generator = [];
-  for (const name of files) generator.push([name, digest((await readFile(path.join(root, name), 'utf8')).replace(/\r\n/g, '\n'))]);
+  for (const name of files.sort()) generator.push([name, digest((await readFile(path.join(root, name), 'utf8')).replace(/\r\n/g, '\n'))]);
   const fingerprint = digest(canonical({ schema: 1, origin, pagesUrl: destination.href, snapshot, assets, generator, sourceVersion: process.env.PAGES_SOURCE_VERSION || null }));
   // A second complete anonymous read detects changed content, deletion, visibility,
   // pagination, category moves, page overrides and attachment metadata changes.
   assertStable(snapshot, await collectSnapshot(read));
   if (previous?.fingerprint === fingerprint) return { changed: false, fingerprint, postCount: snapshot.posts.length };
-  const renderer = createRenderer({ snapshot, origin, base, assetPaths });
-  const pageFile = route => path.join(decodeURIComponent(route), 'view.json');
-  for (const page of ['home', 'about']) {
-    const content = snapshot.pages[page].content || await defaultPage(page);
-    await emit(page === 'home' ? 'view.json' : 'about/view.json', renderer.layout(content.title, content.description,
-      `<article class="content-markdown markdown-body">${renderer.markdown(content.markdown)}</article>${page === 'home' ? `<h2>최근 공개 글</h2>${renderer.list([...snapshot.posts].sort((a, b) => b.updatedAtUtc.localeCompare(a.updatedAtUtc)).slice(0, 10))}` : ''}`));
-  }
-  await emit('posts/view.json', renderer.layout('전체 글', '공개 게시글 목록', renderer.list(snapshot.posts)));
+  const links = { '/': base + '/', '/about': base + '/about/', '/posts': base + '/posts/' };
   for (const category of snapshot.categories) {
     if (!category.slug || ['.', '..'].includes(category.slug) || /[\\/]/.test(category.slug)) throw new Error('Unsafe category slug.');
-    const children = snapshot.categories.filter(item => item.parentId === category.id);
-    const links = children.map(child => `<li><a href="${base}/categories/${encodeURIComponent(child.slug)}/">${escapeHtml(child.name)}</a></li>`).join('');
-    await emit(pageFile(`categories/${encodeURIComponent(category.slug)}/`), renderer.layout(category.name, category.description,
-      `<p>${escapeHtml(category.description)}</p>${children.length ? `<ul>${links}</ul>` : ''}${renderer.list(snapshot.posts.filter(post => post.categoryId === category.id))}`));
+    const route = '/categories/' + encodeURIComponent(category.slug);
+    links[route] = base + route + '/';
+    await emit('categories/' + category.slug + '/view.json', JSON.stringify({title:category.name, categorySlug:category.slug}));
   }
-  for (const post of snapshot.posts) await emit(pageFile(postPath(post).slice(1)), renderer.article(post));
-  await emit('404.html', renderer.layout('페이지를 찾을 수 없습니다', '', `<p><a href="${base}/posts/">전체 글 보기</a></p>`));
+  for (const post of snapshot.posts) {
+    const route = postPath(post);
+    links[route.slice(0,-1)] = links['/posts/' + post.postNumber] = base + route;
+    const { assets, ...detail } = post;
+    const downloads = assets.map(asset => {
+      const pathname = new URL(asset.url,origin).pathname;
+      links[pathname] = base + assetPaths.get(pathname);
+      return {...asset,url:links[pathname]};
+    });
+    await emit(decodeURIComponent(route.slice(1)) + 'view.json', JSON.stringify({title:post.title,description:post.description,post:detail,assets:downloads}));
+  }
+  for (const page of ['home','about']) {
+    const content = snapshot.pages[page].content || await defaultPage(page);
+    await emit(page === 'home' ? 'view.json' : 'about/view.json', JSON.stringify({title:content.title,description:content.description,content,page}));
+  }
+  await emit('posts/view.json', JSON.stringify({title:'전체 글'}));
+  const posts = snapshot.posts.map(({content,assets,...summary}) => summary);
+  const categories = snapshot.categories.map(c => ({...c,postCount:posts.filter(p=>p.categoryId===c.id).length}));
+  await emit('shared.json',JSON.stringify({base,origin,links,posts,categories,externalLinks:snapshot.externalLinks}));
   await emit('.nojekyll', '');
   const routes = ['/', '/posts/', '/about/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
   await emit('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(destination.origin + base + route)}</loc></url>`).join('')}</urlset>`);
@@ -121,7 +132,9 @@ async function main() {
           const route = '/' + relative.split(path.sep).slice(0,-1).map(encodeURIComponent).map(segment => segment + '/').join('');
           routes.push({route,name});
           await cp(source,path.join(data,name));
-        } else if (entry.name !== '404.html') {
+        } else if (entry.name === 'shared.json') {
+          await cp(source,path.join(data,entry.name));
+        } else {
           await cp(source,path.join(project,'public',relative));
         }
       }

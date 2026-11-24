@@ -22,6 +22,9 @@ Directory.CreateDirectory(runtimeDirectory);
 var dataProtectionDirectory = Path.Combine(runtimeDirectory, "data-protection");
 Directory.CreateDirectory(dataProtectionDirectory);
 
+builder.Services.AddHttpClient();
+builder.Services.AddCors(options => options.AddPolicy("pages-public-read", policy =>
+    policy.WithOrigins("https://crusthack.github.io").WithMethods("GET")));
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddDataProtection()
@@ -192,6 +195,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseCors();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.Use(async (context, next) =>

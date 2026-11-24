@@ -19,6 +19,7 @@ public sealed class PostCommunityController(BlogDbContext db, PostAccessService 
         var post = await db.Posts.Include(item => item.Category).SingleOrDefaultAsync(item => item.PostNumber == number);
         return post is not null && access.CanRead(post, HttpContext) ? post : null;
     }
+    [Microsoft.AspNetCore.Cors.EnableCors("pages-public-read")]
     [AllowAnonymous, HttpGet, EnableRateLimiting("public-read")]
     public async Task<IActionResult> Read(long postNumber, [FromQuery, Range(1, 100000)] int page = 1)
     {

@@ -1,4 +1,5 @@
 "use client";
+import { usePublished } from "@/components/PublishedContext";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,22 +11,24 @@ import { navigationExternalLinks, type ExternalLink } from "@/lib/siteLinks";
 import { categoriesUpdatedEvent, externalLinksUpdatedEvent } from "@/lib/uiEvents";
 
 export function SiteHeader() {
+  const published = usePublished();
   const pathname = usePathname();
   const categoryPath = pathname.match(/^\/categories\/([^/]+)$/);
   const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
   const { user, isLoading, logout } = useAuth();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<Category[]>(published?.categories ?? []);
   const topCategories = categories.filter(category =>
     !category.parentId && (category.isVisible ? !category.isHeaderShortcut : Boolean(user?.isOwner)));
   const shortcutCategories = getHeaderShortcuts(categories).filter(category => category.isVisible);
   const hasShortcuts = shortcutCategories.length > 0;
-  const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(navigationExternalLinks);
+  const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(published ? parseExternalLinks(published.externalLinks) ?? navigationExternalLinks : navigationExternalLinks);
   const externalMenuRef = useRef<HTMLDetailsElement>(null);
   const publicMenuRef = useRef<HTMLDetailsElement>(null);
   const categoriesMenuRef = useRef<HTMLDetailsElement>(null);
   const ownerMenuRef = useRef<HTMLDetailsElement>(null);
 
   useEffect(() => {
+    if (published) return;
     let controller: AbortController | null = null;
     const loadCategories = () => {
       controller?.abort();
@@ -52,9 +55,10 @@ export function SiteHeader() {
       window.clearTimeout(timer);
       window.removeEventListener(categoriesUpdatedEvent, loadCategories);
     };
-  }, [user]);
+  }, [user, published]);
 
   useEffect(() => {
+    if (published) return;
     let controller: AbortController | null = null;
     const loadExternalLinks = () => {
       controller?.abort();
@@ -83,7 +87,7 @@ export function SiteHeader() {
       window.clearTimeout(timer);
       window.removeEventListener(externalLinksUpdatedEvent, loadExternalLinks);
     };
-  }, []);
+  }, [published]);
 
   useEffect(() => {
     const closeMenusOnOutsideClick = (event: PointerEvent) => {
@@ -155,14 +159,14 @@ export function SiteHeader() {
             </Link>
             <Link
               className="site-nav-primary-link hidden h-10 items-center whitespace-nowrap px-1.5 font-bold lg:flex"
-              href="/markdown"
+              href={`${published?.origin ?? ""}/markdown`}
               onClick={closeMenus}
             >
               Markdown
             </Link>
             <Link
               className="site-nav-primary-link hidden h-10 items-center whitespace-nowrap px-1.5 font-bold lg:flex"
-              href="/game"
+              href={`${published?.origin ?? ""}/game`}
               onClick={closeMenus}
             >
               웹게임
@@ -218,14 +222,14 @@ export function SiteHeader() {
               <div className="site-nav-dropdown site-nav-dropdown-scroll absolute right-0 z-50 mt-2 w-56 border py-2">
                 <Link
                   className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                  href="/markdown"
+                  href={`${published?.origin ?? ""}/markdown`}
                   onClick={closeMenus}
                 >
                   Markdown
                 </Link>
                 <Link
                   className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                  href="/game"
+                  href={`${published?.origin ?? ""}/game`}
                   onClick={closeMenus}
                 >
                   웹게임
@@ -364,7 +368,7 @@ export function SiteHeader() {
               <Link
                 aria-disabled={isLoading}
                 className="whitespace-nowrap bg-emerald-600 px-2 py-2 font-bold text-white transition hover:bg-emerald-700 sm:px-3"
-                href="/login"
+                href={`${published?.origin ?? ""}/login`}
               >
                 {isLoading ? "확인 중" : "로그인"}
               </Link>

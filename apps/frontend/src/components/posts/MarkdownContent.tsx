@@ -1,4 +1,5 @@
-import ReactMarkdown, { type Components } from "react-markdown";
+import { usePublished } from "@/components/PublishedContext";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@/components/posts/CodeBlock";
 import { remarkHeadingIds } from "@/lib/markdownHeadings";
@@ -62,9 +63,15 @@ const markdownComponents: Components = {
 };
 
 export function MarkdownContent({ source, headingIds = true }: { source: string; headingIds?: boolean }) {
+  const published = usePublished();
   return (
     <div className="content-markdown markdown-body">
-      <ReactMarkdown components={markdownComponents} remarkPlugins={headingIds ? [remarkGfm, remarkHeadingIds] : [remarkGfm]}>{source}</ReactMarkdown>
+      <ReactMarkdown urlTransform={value => {
+        const safe = defaultUrlTransform(value);
+        if (!published || !safe || safe.startsWith("#")) return safe;
+        const url = new URL(safe, published.origin);
+        return url.origin === published.origin ? (published.links[url.pathname.replace(/\/$/, "") || "/"] ?? (published.origin + url.pathname)) + url.search + url.hash : safe;
+      }} components={markdownComponents} remarkPlugins={headingIds ? [remarkGfm, remarkHeadingIds] : [remarkGfm]}>{source}</ReactMarkdown>
     </div>
   );
 }
