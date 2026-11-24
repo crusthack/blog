@@ -24,7 +24,7 @@ Directory.CreateDirectory(dataProtectionDirectory);
 
 builder.Services.AddHttpClient();
 builder.Services.AddCors(options => options.AddPolicy("pages-public-read", policy =>
-    policy.WithOrigins("https://crusthack.github.io").WithMethods("GET")));
+    policy.WithOrigins("https://crusthack.github.io", "https://crusthack.com").WithMethods("GET")));
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 builder.Services.AddDataProtection()
