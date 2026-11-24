@@ -95,11 +95,15 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
     await emit(page === 'home' ? 'view.json' : 'about/view.json', JSON.stringify({title:content.title,description:content.description,content,page}));
   }
   await emit('posts/view.json', JSON.stringify({title:'전체 글'}));
+  for (const [page, title] of [['game', '웹게임'], ['markdown', 'Markdown 임시 미리보기']]) {
+    links['/' + page] = base + '/' + page + '/';
+    await emit(page + '/view.json', JSON.stringify({title, page}));
+  }
   const posts = snapshot.posts.map(({content,assets,...summary}) => summary);
   const categories = snapshot.categories.map(c => ({...c,postCount:posts.filter(p=>p.categoryId===c.id).length}));
   await emit('shared.json',JSON.stringify({base,origin,appOrigin,links,posts,categories,externalLinks:snapshot.externalLinks,usefulLinks:snapshot.usefulLinks}));
   await emit('.nojekyll', '');
-  const routes = ['/', '/posts/', '/about/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
+  const routes = ['/', '/posts/', '/about/', '/game/', '/markdown/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
   await emit('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(destination.origin + base + route)}</loc></url>`).join('')}</urlset>`);
   await emit('robots.txt', `User-agent: *\nAllow: /\nSitemap: ${destination.origin}${base}/sitemap.xml\n`);
   const manifest = { schema: 1, fingerprint, sourceVersion: process.env.PAGES_SOURCE_VERSION || null,

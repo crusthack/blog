@@ -161,14 +161,14 @@ export function SiteHeader() {
             </Link>
             <AppLink
               className="site-nav-primary-link hidden h-10 items-center whitespace-nowrap px-1.5 font-bold lg:flex"
-              href={`${published?.appOrigin ?? ""}/markdown`}
+              href={published?.links["/markdown"] ?? "/markdown"}
               onClick={closeMenus}
             >
               Markdown
             </AppLink>
             <AppLink
               className="site-nav-primary-link hidden h-10 items-center whitespace-nowrap px-1.5 font-bold lg:flex"
-              href={`${published?.appOrigin ?? ""}/game`}
+              href={published?.links["/game"] ?? "/game"}
               onClick={closeMenus}
             >
               웹게임
@@ -224,14 +224,14 @@ export function SiteHeader() {
               <div className="site-nav-dropdown site-nav-dropdown-scroll absolute right-0 z-50 mt-2 w-56 border py-2">
                 <AppLink
                   className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                  href={`${published?.appOrigin ?? ""}/markdown`}
+                  href={published?.links["/markdown"] ?? "/markdown"}
                   onClick={closeMenus}
                 >
                   Markdown
                 </AppLink>
                 <AppLink
                   className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                  href={`${published?.appOrigin ?? ""}/game`}
+                  href={published?.links["/game"] ?? "/game"}
                   onClick={closeMenus}
                 >
                   웹게임
