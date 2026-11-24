@@ -38,7 +38,9 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
                 category.IsVisible,
                 category.Posts.Count(post => canManage ||
                     post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected),
-                category.Id == headerCategoryId))
+                category.Id == headerCategoryId,
+                category.ParentId,
+                category.IsLocallyVisible))
             .ToListAsync(cancellationToken);
 
         return Ok(categories);
@@ -92,6 +94,9 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         if (!SlugPattern().IsMatch(slug))
             ModelState.AddModelError(nameof(request.Slug), "Slug는 영문 소문자, 숫자와 하이픈만 사용할 수 있습니다.");
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var parent = request.ParentId is Guid parentId ? await db.Categories.FindAsync(parentId) : null;
+        if (request.ParentId.HasValue && parent is null) return InvalidParent();
         if (await db.Categories.AnyAsync(category => category.Slug == slug))
             return Conflict(new ProblemDetails { Title = "이미 사용 중인 카테고리 slug입니다." });
 
@@ -101,10 +106,13 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
             Slug = slug,
             Description = Normalize(request.Description),
             SortOrder = request.SortOrder,
-            IsVisible = request.IsVisible,
+            ParentId = parent?.Id,
+            IsLocallyVisible = request.IsVisible,
+            IsVisible = request.IsVisible && parent?.IsVisible != false,
         };
         db.Categories.Add(category);
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return Created($"/api/categories/{category.Id}", ToResponse(category, 0));
     }
 
@@ -112,10 +120,6 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<CategoryResponse>> Update(Guid id, SaveCategoryRequest request)
     {
-        var category = await db.Categories.Include(item => item.Posts)
-            .SingleOrDefaultAsync(item => item.Id == id);
-        if (category is null) return NotFound();
-
         var name = request.Name.Trim();
         if (name.Length == 0)
             ModelState.AddModelError(nameof(request.Name), "카테고리 이름을 입력해 주세요.");
@@ -123,27 +127,50 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         if (!SlugPattern().IsMatch(slug))
             ModelState.AddModelError(nameof(request.Slug), "Slug는 영문 소문자, 숫자와 하이픈만 사용할 수 있습니다.");
         if (!ModelState.IsValid) return ValidationProblem(ModelState);
-        if (await db.Categories.AnyAsync(item => item.Id != id && item.Slug == slug))
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var tree = await db.Categories.ToDictionaryAsync(item => item.Id);
+        if (!tree.TryGetValue(id, out var category)) return NotFound();
+        if (!IsValidParent(id, request.ParentId, tree)) return InvalidParent();
+        if (tree.Values.Any(item => item.Id != id && item.Slug == slug))
             return Conflict(new ProblemDetails { Title = "이미 사용 중인 카테고리 slug입니다." });
 
         category.Name = name;
         category.Slug = slug;
         category.Description = Normalize(request.Description);
         category.SortOrder = request.SortOrder;
-        category.IsVisible = request.IsVisible;
-        category.UpdatedAtUtc = DateTime.UtcNow;
+        category.IsLocallyVisible = request.IsVisible;
+        MoveCategory(category, request.ParentId, tree);
+        var postCount = await db.Posts.CountAsync(post => post.CategoryId == id);
+        var headerCategoryId = await ReadHeaderCategoryId();
         await db.SaveChangesAsync();
-        return Ok(ToResponse(category, category.Posts.Count, category.Id == await ReadHeaderCategoryId()));
+        await transaction.CommitAsync();
+        return Ok(ToResponse(category, postCount, category.Id == headerCategoryId));
+    }
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpPut("{id:guid}/parent")]
+    public async Task<IActionResult> SetParent(Guid id, SetCategoryParentRequest request)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var tree = await db.Categories.ToDictionaryAsync(item => item.Id);
+        if (!tree.TryGetValue(id, out var category)) return NotFound();
+        if (!IsValidParent(id, request.ParentId, tree)) return InvalidParent();
+        MoveCategory(category, request.ParentId, tree);
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return NoContent();
     }
 
     [Authorize(Roles = Roles.Owner)]
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
-        var category = await db.Categories.Include(item => item.Posts)
-            .SingleOrDefaultAsync(item => item.Id == id);
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var category = await db.Categories.FindAsync(id);
         if (category is null) return NotFound();
-        if (category.Posts.Count != 0)
+        if (await db.Categories.AnyAsync(item => item.ParentId == id))
+            return Conflict(new ProblemDetails { Title = "하위 카테고리를 먼저 이동하거나 삭제해 주세요." });
+        if (await db.Posts.AnyAsync(post => post.CategoryId == id))
             return Conflict(new ProblemDetails
             {
                 Title = "글이 연결된 카테고리는 삭제할 수 없습니다.",
@@ -152,14 +179,52 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 
         db.Categories.Remove(category);
         await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return NoContent();
     }
+
+    private static bool IsValidParent(Guid categoryId, Guid? parentId, IReadOnlyDictionary<Guid, Category> tree)
+    {
+        while (parentId is Guid ancestorId)
+        {
+            if (ancestorId == categoryId || !tree.TryGetValue(ancestorId, out var ancestor))
+                return false;
+            parentId = ancestor.ParentId;
+        }
+        return true;
+    }
+
+    private static void MoveCategory(Category category, Guid? parentId, IReadOnlyDictionary<Guid, Category> tree)
+    {
+        category.ParentId = parentId;
+        category.IsVisible = category.IsLocallyVisible && (parentId is null || tree[parentId.Value].IsVisible);
+        var now = DateTime.UtcNow;
+        category.UpdatedAtUtc = now;
+
+        var children = tree.Values.ToLookup(item => item.ParentId);
+        var queue = new Queue<Category>();
+        queue.Enqueue(category);
+        while (queue.TryDequeue(out var parent))
+        {
+            foreach (var child in children[parent.Id])
+            {
+                var isVisible = child.IsLocallyVisible && parent.IsVisible;
+                if (child.IsVisible == isVisible) continue;
+                child.IsVisible = isVisible;
+                child.UpdatedAtUtc = now;
+                queue.Enqueue(child);
+            }
+        }
+    }
+
+    private BadRequestObjectResult InvalidParent() =>
+        BadRequest(new ProblemDetails { Title = "자신이나 자신의 하위 카테고리는 상위 카테고리로 지정할 수 없습니다. 존재하는 다른 카테고리를 선택해 주세요." });
 
     private static string NormalizeSlug(string value) => value.Trim().ToLowerInvariant();
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static CategoryResponse ToResponse(Category category, int postCount, bool isHeaderShortcut = false) => new(
         category.Id, category.Name, category.Slug, category.Description,
-        category.SortOrder, category.IsVisible, postCount, isHeaderShortcut);
+        category.SortOrder, category.IsVisible, postCount, isHeaderShortcut, category.ParentId, category.IsLocallyVisible);
 
     private async Task<Guid?> ReadHeaderCategoryId(CancellationToken cancellationToken = default)
     {
@@ -179,6 +244,11 @@ public sealed class SetHeaderCategoryRequest
     public required Guid? CategoryId { get; init; }
 }
 
+public sealed class SetCategoryParentRequest
+{
+    public required Guid? ParentId { get; init; }
+}
+
 public sealed class SaveCategoryRequest
 {
     [Required, StringLength(80, MinimumLength = 1)]
@@ -194,6 +264,7 @@ public sealed class SaveCategoryRequest
     public int SortOrder { get; init; }
 
     public bool IsVisible { get; init; } = true;
+    public Guid? ParentId { get; init; }
 }
 
 public sealed record CategoryResponse(
@@ -204,4 +275,6 @@ public sealed record CategoryResponse(
     int SortOrder,
     bool IsVisible,
     int PostCount,
-    bool IsHeaderShortcut = false);
+    bool IsHeaderShortcut = false,
+    Guid? ParentId = null,
+    bool IsLocallyVisible = true);

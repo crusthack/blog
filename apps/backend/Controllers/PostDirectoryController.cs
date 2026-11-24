@@ -24,7 +24,9 @@ public sealed class PostDirectoryController(BlogDbContext db) : ControllerBase
         if (request.Bookmarked) query = query.Where(post => db.PostBookmarks.Any(item => item.UserId == actor && item.PostId == post.Id));
         if (request.Category == "uncategorized") query = query.Where(post => post.CategoryId == null);
         else if (!string.IsNullOrEmpty(request.Category)) query = query.Where(post => post.Category != null && post.Category.Slug == request.Category);
-        if (!string.IsNullOrEmpty(request.Visibility)) query = query.Where(post => post.Visibility == request.Visibility);
+        if (!string.IsNullOrEmpty(request.Visibility))
+            query = query.Where(post => (post.Category != null && !post.Category.IsVisible
+                ? PostVisibility.Private : post.Visibility) == request.Visibility);
         if (!string.IsNullOrWhiteSpace(request.Query))
         {
             var pattern = "%" + request.Query.Trim().Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
@@ -60,6 +62,7 @@ public sealed class PostDirectoryController(BlogDbContext db) : ControllerBase
                 post.CategoryId,
                 CategoryName = post.Category == null ? null : post.Category.Name,
                 CategorySlug = post.Category == null ? null : post.Category.Slug,
+                CategoryIsHidden = post.Category != null && !post.Category.IsVisible,
                 post.Visibility,
                 CreatedAtUtc = DateTime.SpecifyKind(post.CreatedAtUtc, DateTimeKind.Utc),
                 UpdatedAtUtc = DateTime.SpecifyKind(post.UpdatedAtUtc, DateTimeKind.Utc),

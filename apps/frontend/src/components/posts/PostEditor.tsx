@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { PostAssetManager } from "@/components/posts/PostAssetManager";
 import { postPath } from "@/lib/postPaths";
+import { flattenCategories } from "@/lib/categoryTree";
 import { insertMarkdown as applyMarkdown, markdownTools } from "@/lib/markdownEditing";
 import { type Category, type PostDetail, type PostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
 
@@ -20,6 +21,9 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
   const [content, setContent] = useState(initialContent);
   const [categoryId, setCategoryId] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
+  const [originalHiddenCategoryId, setOriginalHiddenCategoryId] = useState<string | null>(null);
+  const selectedCategory = categories.find(category => category.id === categoryId);
+  const categoryIsHidden = selectedCategory ? !selectedCategory.isVisible : categoryId === originalHiddenCategoryId;
   const [visibility, setVisibility] = useState<PostVisibility>("Private");
   const [accessCode, setAccessCode] = useState("");
   const [hasAccessCode, setHasAccessCode] = useState(false);
@@ -101,6 +105,7 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
         setDescription(post.description ?? "");
         setContent(post.content);
         setCategoryId(post.categoryId ?? "");
+        setOriginalHiddenCategoryId(post.categoryIsHidden ? post.categoryId : null);
         setVisibility(post.visibility);
         setHasAccessCode(post.visibility === "CodeProtected");
         setAccessCode("");
@@ -308,7 +313,8 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
             onSubmit={handleSubmit}
           >
           <fieldset className="space-y-3">
-            <legend className="mb-2 text-sm font-bold">공개 범위</legend>
+            <legend className="mb-2 text-sm font-bold">{categoryIsHidden ? "카테고리가 공개되면 적용할 글 공개 범위" : "공개 범위"}</legend>
+            {categoryIsHidden && <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">현재 비공개 · 카테고리 숨김</p>}
             <div className="flex flex-wrap gap-4">
               {(Object.keys(visibilityLabels) as PostVisibility[]).map((value) => (
                 <label key={value} className="flex items-center gap-2 text-sm">
@@ -318,11 +324,11 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
                 </label>
               ))}
             </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            {!categoryIsHidden && <p className="text-sm text-gray-500 dark:text-gray-400">
               {visibility === "Public" ? "누구나 글과 첨부 파일을 볼 수 있습니다."
                 : visibility === "Private" ? "작성자와 운영자만 볼 수 있으며 다른 회원의 목록과 검색에서 숨깁니다."
                 : "제목·설명은 공개되며 본문과 첨부 파일은 코드 입력 후 열립니다."}
-            </p>
+            </p>}
             {visibility === "CodeProtected" ? (
               <label className="block text-sm font-bold">
                 접근 코드
@@ -368,7 +374,9 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
               onChange={(event) => setCategoryId(event.target.value)}
             >
               <option value="">분류 없음</option>
-              {categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
+              {flattenCategories(categories).map(({ category, depth }) => <option value={category.id} key={category.id}>
+                {"— ".repeat(Math.min(depth, 6))}{category.name}{!category.isVisible && " (숨김)"}
+              </option>)}
             </select>
           </label>
           </div>
@@ -413,9 +421,9 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
         <section data-ui="panel" className="editor-preview-pane post-view min-h-[500px] min-w-0 overflow-auto bg-white p-5 sm:p-7 dark:bg-[#252525]">
           <p className="mb-5 text-sm font-black tracking-[0.16em] text-emerald-600">MARKDOWN PREVIEW</p>
           <header className="mb-6 border-b border-gray-200 pb-6 dark:border-gray-700">
-            {categories.find((category) => category.id === categoryId) ? (
+            {selectedCategory ? (
               <p className="mb-2 text-sm font-bold text-emerald-600">
-                {categories.find((category) => category.id === categoryId)?.name}
+                {selectedCategory.name}
               </p>
             ) : null}
             <h1 className="text-3xl font-black leading-tight sm:text-4xl">{title || "제목 미리보기"}</h1>

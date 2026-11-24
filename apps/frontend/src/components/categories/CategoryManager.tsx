@@ -1,14 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type DragEvent, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, readProblem } from "@/lib/contracts";
+import { canUseCategoryParent, flattenCategories } from "@/lib/categoryTree";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 
 type CategoryDraft = Pick<
   Category,
-  "id" | "name" | "slug" | "description" | "sortOrder" | "isVisible"
+  "id" | "name" | "slug" | "description" | "sortOrder" | "isVisible" | "parentId"
 >;
 
 export function CategoryManager({ embedded = false }: { embedded?: boolean } = {}) {
@@ -22,6 +23,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const [description, setDescription] = useState("");
   const [sortOrder, setSortOrder] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
+  const [parentId, setParentId] = useState("");
   const [editing, setEditing] = useState<CategoryDraft | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -29,6 +31,11 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null);
   const [shortcutDraft, setShortcutDraft] = useState<string | null>(null);
   const [isSavingShortcut, setIsSavingShortcut] = useState(false);
+  const [draggedId, setDraggedId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const tree = flattenCategories(categories);
+  const categoriesById = new Map(categories.map(category => [category.id, category]));
+  const parentIds = new Set(categories.map(category => category.parentId));
   const savedShortcut = categories.find(category => category.isHeaderShortcut);
   const visibleCategories = categories.filter(category => category.isVisible);
   const selectedShortcutId = shortcutDraft === ""
@@ -81,7 +88,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, slug, description, sortOrder, isVisible }),
+        body: JSON.stringify({ name, slug, description, sortOrder, isVisible, parentId: parentId || null }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 만들지 못했습니다."));
       setName("");
@@ -106,7 +113,8 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       slug: category.slug,
       description: category.description,
       sortOrder: category.sortOrder,
-      isVisible: category.isVisible,
+      isVisible: category.isLocallyVisible ?? category.isVisible,
+      parentId: category.parentId ?? null,
     });
     setError("");
     setMessage("");
@@ -129,6 +137,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           description: editing.description,
           sortOrder: editing.sortOrder,
           isVisible: editing.isVisible,
+          parentId: editing.parentId,
         }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 저장하지 못했습니다."));
@@ -193,6 +202,57 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     }
   }
 
+  function canDropOn(target: string | null) {
+    const dragged = draggedId ? categoriesById.get(draggedId) : undefined;
+    return Boolean(dragged && !busyCategoryId && (dragged.parentId ?? null) !== target
+      && canUseCategoryParent(target, dragged.id, categoriesById));
+  }
+
+  function dragOver(event: DragEvent, target: string | null) {
+    if (!canDropOn(target)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropTarget(target ?? "");
+  }
+
+  function dragLeave(event: DragEvent) {
+    if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) {
+      setDropTarget(null);
+    }
+  }
+
+  function endDrag() {
+    setDraggedId(null);
+    setDropTarget(null);
+  }
+
+  async function dropCategory(event: DragEvent, target: string | null) {
+    event.preventDefault();
+    const id = draggedId;
+    const allowed = canDropOn(target);
+    endDrag();
+    if (!id || !allowed) return;
+    setBusyCategoryId(id);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/categories/${id}/parent`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ parentId: target }),
+      });
+      if (!response.ok) throw new Error(await readProblem(response, "카테고리를 이동하지 못했습니다."));
+      await load();
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+      setMessage("카테고리 위치를 변경했습니다.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "카테고리를 이동하지 못했습니다.");
+    } finally {
+      setBusyCategoryId(null);
+    }
+  }
+
   if (isAuthLoading || !user?.isOwner) {
     return <Container className="mx-auto max-w-6xl p-10 text-gray-500 dark:text-gray-400">권한을 확인하고 있습니다.</Container>;
   }
@@ -235,8 +295,8 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
               {savedShortcut && !savedShortcut.isVisible && (
                 <option value={savedShortcut.id} disabled>{savedShortcut.name} (비공개)</option>
               )}
-              {visibleCategories.map(category => (
-                <option key={category.id} value={category.id}>{category.name}</option>
+              {tree.filter(({ category }) => category.isVisible).map(({ category, depth }) => (
+                <option key={category.id} value={category.id}>{"— ".repeat(Math.min(depth, 6))}{category.name}</option>
               ))}
             </select>
           </label>
@@ -248,6 +308,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <form data-ui="panel" className="space-y-5 bg-white p-6 dark:bg-[#252525]" onSubmit={createCategory}>
           <h2 className="text-2xl font-black">새 카테고리</h2>
+          <CategoryParentField rows={tree} value={parentId} onChange={setParentId} />
           <CategoryTextField label="이름" maxLength={80} onChange={setName} required value={name} />
           <CategoryTextField
             help="영문 소문자, 숫자, 하이픈만 사용합니다."
@@ -292,7 +353,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
 
         <section data-ui="panel" className="bg-white p-6 dark:bg-[#252525]">
           <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-2xl font-black">현재 카테고리</h2>
+            <h2 className="text-2xl font-black">카테고리 트리</h2>
             <span className="text-sm text-gray-500 dark:text-gray-400">{categories.length}개</span>
           </div>
           {categories.length === 0 ? (
@@ -300,9 +361,25 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
               아직 카테고리가 없습니다.
             </p>
           ) : (
-            <div className="space-y-3">
-              {categories.map((category) => editing?.id === category.id ? (
-                <form data-ui="row" className="space-y-4 border border-emerald-300 p-4 dark:border-emerald-800" key={category.id} onSubmit={updateCategory}>
+            <>
+            <p className="mb-3 text-sm text-gray-500 dark:text-gray-400">카테고리를 다른 항목 위에 놓으면 그 아래로 이동합니다.</p>
+            <div
+              className={`mb-3 border border-dashed p-3 text-sm ${dropTarget === "" ? "border-emerald-600 bg-emerald-500/15" : "border-gray-400"}`}
+              onDragOver={event => dragOver(event, null)}
+              onDragLeave={dragLeave}
+              onDrop={event => void dropCategory(event, null)}
+            >
+              여기에 놓아 최상위로 이동
+            </div>
+            <ul className="space-y-3">
+              {tree.map(({ category, depth }) => <li key={category.id} style={{ marginInlineStart: `${Math.min(depth, 5) * 0.75}rem` }}>
+              {editing?.id === category.id ? (
+                <form data-ui="row" className="space-y-4 border border-emerald-300 p-4 dark:border-emerald-800" onSubmit={updateCategory}>
+                  <CategoryParentField
+                    rows={tree.filter(({ category: parent }) => canUseCategoryParent(parent.id, category.id, categoriesById))}
+                    value={editing.parentId ?? ""}
+                    onChange={value => setEditing(current => current ? { ...current, parentId: value || null } : current)}
+                  />
                   <div className="grid gap-3 sm:grid-cols-2">
                     <CategoryTextField label="이름" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, name: value } : current)} required value={editing.name} />
                     <CategoryTextField label="slug" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, slug: value.toLowerCase() } : current)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={editing.slug} />
@@ -327,13 +404,27 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
                   </div>
                 </form>
               ) : (
-                <article data-ui="row" className="flex flex-col gap-4 border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-gray-700" key={category.id}>
+                <article
+                  data-ui="row"
+                  className={`flex flex-col gap-4 border p-4 lg:flex-row lg:items-center lg:justify-between ${dropTarget === category.id ? "border-emerald-600 bg-emerald-500/15" : "border-gray-200 dark:border-gray-700"}`}
+                  draggable={busyCategoryId === null}
+                  onDragStart={event => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", category.id);
+                    setDraggedId(category.id);
+                  }}
+                  onDragEnd={endDrag}
+                  onDragOver={event => dragOver(event, category.id)}
+                  onDragLeave={dragLeave}
+                  onDrop={event => void dropCategory(event, category.id)}
+                >
                   <div className="min-w-0">
                     <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <strong className="text-base">{category.name}</strong>
+                      <span aria-hidden="true" className="cursor-grab text-gray-500">⠿</span>
+                      <strong className="break-all text-base">{category.name}</strong>
                       <span className="font-mono text-xs text-gray-500 dark:text-gray-400">/{category.slug}</span>
                       <span className={`text-xs font-bold ${category.isVisible ? "text-emerald-600" : "text-amber-600"}`}>
-                        {category.isVisible ? "공개" : "숨김"}
+                        {category.isVisible ? "공개" : category.isLocallyVisible ? "상위 카테고리 숨김" : "숨김"}
                       </span>
                     </p>
                     <small className="mt-1 block break-words leading-5 text-gray-500 dark:text-gray-400">
@@ -344,21 +435,42 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
                     <button className={neutralButton} disabled={busyCategoryId !== null} onClick={() => beginEdit(category)} type="button">수정</button>
                     <button
                       className="border border-red-300 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                      disabled={category.postCount > 0 || busyCategoryId !== null}
+                      disabled={category.postCount > 0 || parentIds.has(category.id) || busyCategoryId !== null}
                       onClick={() => void deleteCategory(category)}
-                      title={category.postCount > 0 ? "게시글이 있는 카테고리는 삭제할 수 없습니다." : undefined}
+                      title={parentIds.has(category.id) ? "하위 카테고리를 먼저 이동하거나 삭제해 주세요."
+                        : category.postCount > 0 ? "게시글이 있는 카테고리는 삭제할 수 없습니다." : undefined}
                       type="button"
                     >
                       {busyCategoryId === category.id ? "처리 중..." : "삭제"}
                     </button>
                   </div>
                 </article>
-              ))}
-            </div>
+              )}
+              </li>)}
+            </ul>
+            </>
           )}
         </section>
       </div>
     </Container>
+  );
+}
+
+function CategoryParentField({ rows, value, onChange }: {
+  rows: ReturnType<typeof flattenCategories>;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-bold">상위 카테고리</span>
+      <select data-ui="input" className="w-full px-3 py-2" value={value} onChange={event => onChange(event.target.value)}>
+        <option value="">없음 (최상위)</option>
+        {rows.map(({ category, depth }) => <option key={category.id} value={category.id}>
+          {"— ".repeat(Math.min(depth, 6))}{category.name}
+        </option>)}
+      </select>
+    </label>
   );
 }
 

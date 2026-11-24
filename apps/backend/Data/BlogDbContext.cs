@@ -80,6 +80,9 @@ public sealed class BlogDbContext(DbContextOptions<BlogDbContext> options)
             entity.Property(category => category.Name).HasMaxLength(80);
             entity.Property(category => category.Slug).HasMaxLength(80);
             entity.Property(category => category.Description).HasMaxLength(300);
+            entity.HasOne(category => category.Parent).WithMany()
+                .HasForeignKey(category => category.ParentId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<PostAsset>(entity =>

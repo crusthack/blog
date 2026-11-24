@@ -24,6 +24,8 @@ export type Category = {
   isVisible: boolean;
   postCount: number;
   isHeaderShortcut: boolean;
+  parentId?: string | null;
+  isLocallyVisible?: boolean;
 };
 
 export type PostVisibility = "Public" | "Private" | "CodeProtected";
@@ -33,6 +35,10 @@ export const visibilityLabels: Record<PostVisibility, string> = {
   Private: "비공개",
   CodeProtected: "코드로 열람",
 };
+
+export function effectivePostVisibility(post: { visibility: PostVisibility; categoryIsHidden?: boolean }): PostVisibility {
+  return post.categoryIsHidden ? "Private" : post.visibility;
+}
 
 export type PostSummary = {
   createdAtUtc?: string;
@@ -47,6 +53,7 @@ export type PostSummary = {
   categoryId: string | null;
   categoryName: string | null;
   categorySlug: string | null;
+  categoryIsHidden?: boolean;
   visibility: PostVisibility;
   updatedAtUtc: string;
   publishedAtUtc: string | null;

@@ -11,7 +11,7 @@ import { CategoryManager } from "@/components/categories/CategoryManager";
 import { SiteSettingsManager } from "@/components/settings/SiteSettingsManager";
 import { HealthDashboard } from "@/components/health/HealthDashboard";
 import { CommunityPanel, type CommunityTab } from "@/components/community/CommunityManagement";
-import { readProblem, visibilityLabels, type PostVisibility } from "@/lib/contracts";
+import { effectivePostVisibility, readProblem, visibilityLabels, type PostVisibility } from "@/lib/contracts";
 import { postPath } from "@/lib/postPaths";
 
 const sections = [
@@ -24,7 +24,7 @@ type Section = (typeof sections)[number][0];
 type Overview = {
   posts: number; trash: number; members: number; suspended: number; reports: number; categories: number;
   comments: number; invites: number; assets: number; assetBytes: number; checkedAtUtc: string;
-  recentPosts: { postNumber: number; title: string; visibility: PostVisibility; categorySlug: string | null; updatedAtUtc: string }[];
+  recentPosts: { postNumber: number; title: string; visibility: PostVisibility; categorySlug: string | null; categoryIsHidden?: boolean; updatedAtUtc: string }[];
   recentActivity: { id: number; action: string; target: string; createdAtUtc: string }[];
 };
 
@@ -117,7 +117,7 @@ function OverviewPanel({ active }: { active: boolean }) {
         ["사이트 설정", "관리", "settings", "외부 사이트 메뉴·링크"],
       ].map(([label, value, target, hint]) => <a href={`#${target}`} className="admin-metric" key={target}><span>{label}</span><strong>{typeof value === "number" ? value.toLocaleString() : value}</strong><small>{hint}</small></a>)}</div>
       {overview.reports > 0 && <p className="admin-attention"><a href="#reports">미처리 신고 {overview.reports}건을 확인해 주세요 →</a></p>}
-      <div className="admin-overview-columns"><section><div className="admin-section-heading"><h3>최근 수정한 글</h3><a href="#posts">전체 관리 →</a></div><ul className="admin-activity">{overview.recentPosts.map(post => <li key={post.postNumber}><div><Link href={`/write/${post.postNumber}`}>{post.title}</Link><small>{visibilityLabels[post.visibility]} · {new Date(post.updatedAtUtc).toLocaleString("ko-KR")}</small></div><Link href={postPath(post)} aria-label={`${post.title} 보기`}>보기</Link></li>)}{!overview.recentPosts.length && <li>등록된 글이 없습니다.</li>}</ul></section>
+      <div className="admin-overview-columns"><section><div className="admin-section-heading"><h3>최근 수정한 글</h3><a href="#posts">전체 관리 →</a></div><ul className="admin-activity">{overview.recentPosts.map(post => <li key={post.postNumber}><div><Link href={`/write/${post.postNumber}`}>{post.title}</Link><small>{visibilityLabels[effectivePostVisibility(post)]}{post.categoryIsHidden && " (카테고리 숨김)"} · {new Date(post.updatedAtUtc).toLocaleString("ko-KR")}</small></div><Link href={postPath(post)} aria-label={`${post.title} 보기`}>보기</Link></li>)}{!overview.recentPosts.length && <li>등록된 글이 없습니다.</li>}</ul></section>
         <section><div className="admin-section-heading"><h3>최근 운영 기록</h3><a href="#audit">전체 기록 →</a></div><ul className="admin-activity">{overview.recentActivity.map(item => <li key={item.id}><div><span>{activityLabels[item.action] ?? item.action}</span><small>{item.target}</small><small>{new Date(item.createdAtUtc).toLocaleString("ko-KR")}</small></div></li>)}{!overview.recentActivity.length && <li>운영 기록이 없습니다.</li>}</ul></section></div>
       <div className="admin-quick-links"><a href="#settings">사이트 설정</a><a href="#health">API·DB 상태 확인</a><a href="#storage">첨부 파일 정합성 점검</a></div>
     </>}

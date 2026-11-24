@@ -14,6 +14,7 @@ export function SiteHeader() {
   const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
   const { user, isLoading, logout } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
+  const topCategories = categories.filter(category => !category.parentId && category.isVisible);
   const shortcutCategory = categories.find(category => category.isHeaderShortcut && category.isVisible);
   const shortcutHref = shortcutCategory ? `/categories/${encodeURIComponent(shortcutCategory.slug)}` : null;
   const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(navigationExternalLinks);
@@ -268,8 +269,8 @@ export function SiteHeader() {
                 <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold" href="/posts" onClick={closeMenus}>
                   전체 글
                 </Link>
-                {categories.length > 0 ? (
-                  categories.map((category) => (
+                {topCategories.length > 0 ? (
+                  topCategories.map((category) => (
                     <Link
                       className="site-nav-dropdown-link flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-bold transition"
                       href={`/categories/${encodeURIComponent(category.slug)}`}

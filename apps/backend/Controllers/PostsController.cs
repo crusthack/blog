@@ -57,7 +57,8 @@ public sealed class PostsController(
                 post.Category == null ? null : post.Category.Slug,
                 post.Visibility,
                 post.UpdatedAtUtc,
-                post.PublishedAtUtc))
+                post.PublishedAtUtc,
+                post.Category != null && !post.Category.IsVisible))
             .ToListAsync();
 
         return Ok(posts);
@@ -312,7 +313,9 @@ public sealed class PostsController(
         post.Content,
         DateTime.SpecifyKind(post.CreatedAtUtc, DateTimeKind.Utc),
         DateTime.SpecifyKind(post.UpdatedAtUtc, DateTimeKind.Utc),
-        post.PublishedAtUtc is DateTime published ? DateTime.SpecifyKind(published, DateTimeKind.Utc) : null, post.OwnerId, post.Revision, PostAccessService.CanManage(post, HttpContext), post.Owner?.UserName);
+        post.PublishedAtUtc is DateTime published ? DateTime.SpecifyKind(published, DateTimeKind.Utc) : null,
+        post.OwnerId, post.Revision, PostAccessService.CanManage(post, HttpContext), post.Owner?.UserName,
+        post.Category is { IsVisible: false });
 
     private void Audit(string action, long number)
     {
@@ -329,7 +332,8 @@ public sealed record PostSummaryResponse(
     string? CategorySlug,
     string Visibility,
     DateTime UpdatedAtUtc,
-    DateTime? PublishedAtUtc);
+    DateTime? PublishedAtUtc,
+    bool CategoryIsHidden = false);
 
 public sealed record PostDetailResponse(
     long PostNumber,
@@ -343,7 +347,8 @@ public sealed record PostDetailResponse(
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
     DateTime? PublishedAtUtc,
-    Guid AuthorId = default, long Revision = 1, bool CanEdit = false, string? AuthorName = null);
+    Guid AuthorId = default, long Revision = 1, bool CanEdit = false, string? AuthorName = null,
+    bool CategoryIsHidden = false);
 
 public class CreatePostRequest
 {

@@ -30,6 +30,7 @@ public sealed class AdminOverviewController(BlogDbContext db) : ControllerBase
                 post.Title,
                 post.Visibility,
                 CategorySlug = post.Category == null ? null : post.Category.Slug,
+                CategoryIsHidden = post.Category != null && !post.Category.IsVisible,
                 UpdatedAtUtc = DateTime.SpecifyKind(post.UpdatedAtUtc, DateTimeKind.Utc)
             }).ToListAsync();
         var recentActivity = await db.AuditEvents.AsNoTracking().OrderByDescending(item => item.Id).Take(5)

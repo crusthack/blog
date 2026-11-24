@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { type Category, type PostSummary, readProblem, visibilityLabels } from "@/lib/contracts";
+import { type Category, type PostSummary, effectivePostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
+import { flattenCategories } from "@/lib/categoryTree";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { postPath } from "@/lib/postPaths";
 
@@ -82,6 +83,8 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   }, []);
 
   const activeCategory = categories.find((category) => category.slug === categorySlug);
+  const parentCategory = activeCategory?.parentId && categories.find(category => category.id === activeCategory.parentId);
+  const childCategories = activeCategory ? categories.filter(category => category.parentId === activeCategory.id) : [];
   const missingCategory = Boolean(categorySlug && !isLoading && !loadError && !activeCategory);
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = page;
@@ -141,6 +144,11 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
     <section className="post-board" aria-label={manage ? "전체 게시글 관리" : "게시글 목록"}>
       <header className="board-heading">
         <div>
+          {parentCategory && (
+            <Link className="text-sm font-semibold underline" href={`/categories/${encodeURIComponent(parentCategory.slug)}`}>
+              ↑ {parentCategory.name}
+            </Link>
+          )}
           <Heading>{manage ? (isOwner ? "게시글 전체 관리" : "내 글 관리") : bookmarked ? "북마크" : categorySlug ? activeCategory?.name ?? "카테고리" : "전체 글"}</Heading>
           <p>{manage ? "공개·비공개·코드 보호 글을 검색하고 관리합니다." : activeCategory?.description ?? "우선순위가 높은 글부터, 같은 순위에서는 최신 글부터 표시합니다."}</p>
         </div>
@@ -150,11 +158,22 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
           {canWrite ? <Link className="board-primary" href={categorySlug || categoryId ? `/write?${new URLSearchParams({ category: categorySlug || categoryId })}` : "/write"}>글쓰기</Link> : null}
         </div>
       </header>
+      {childCategories.length > 0 && (
+        <nav aria-label="하위 카테고리" className="board-heading-actions mb-4 flex-wrap">
+          {childCategories.map(category => (
+            <Link key={category.id} href={`/categories/${encodeURIComponent(category.slug)}`}>
+              {category.name}{!category.isVisible && " (숨김)"}
+            </Link>
+          ))}
+        </nav>
+      )}
       <form className="board-filters" role="search" onSubmit={submitSearch}>
         {!categorySlug ? <label><span className="sr-only">카테고리 필터</span>
           <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setPage(1); }}>
             <option value="">전체 카테고리</option><option value="uncategorized">미분류</option>
-            {categories.map((category) => <option key={category.id} value={category.slug}>{category.name}{!category.isVisible ? " (숨김)" : ""}</option>)}
+            {flattenCategories(categories).map(({ category, depth }) => <option key={category.id} value={category.slug}>
+              {"— ".repeat(Math.min(depth, 6))}{category.name}{!category.isVisible && " (숨김)"}
+            </option>)}
           </select>
         </label> : null}
         {manage ? <label><span className="sr-only">공개 범위 필터</span>
@@ -208,7 +227,10 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
                   <td className="board-number">{post.postNumber}</td>
                   <td className="board-category"><span title={post.categoryName ?? "미분류"}>{post.categoryName ?? "미분류"}</span></td>
                   <td className="board-title"><Link href={postPath(post)} title={post.title}>{post.title}</Link></td><td>{post.authorName}</td>
-                  {manage ? <td className="board-visibility"><span data-visibility={post.visibility}>{visibilityLabels[post.visibility]}</span></td> : null}
+                  {manage ? <td className="board-visibility">
+                    <span data-visibility={effectivePostVisibility(post)}>{visibilityLabels[effectivePostVisibility(post)]}</span>
+                    {post.categoryIsHidden && <small className="block">카테고리 숨김</small>}
+                  </td> : null}
                   <td className="board-date"><time dateTime={dateOf(post)}>
                     {formatDate(dateOf(post))}
                   </time></td>

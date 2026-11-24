@@ -153,8 +153,6 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
 
   if (slideMode) return <SlideWorkspace post={post} userId={user?.id ?? null} />;
 
-  const readingMinutes = Math.max(1, Math.ceil(post.content.trim().split(/\s+/).length / 250));
-
   return (
     <BlogFrame rightSidebar={<PostToc headings={headings} />}>
       <article
@@ -178,14 +176,13 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             ) : null}
           </div>
           {deleteError && <p role="alert" className="mb-4 text-red-600">{deleteError}</p>}
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
-            {post.categoryName && post.categorySlug ? (
+          {post.categoryName && post.categorySlug && (
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
               <Link href={`/categories/${encodeURIComponent(post.categorySlug)}`} className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
                 {post.categoryName}
               </Link>
-            ) : null}
-            <span className="text-gray-500">약 {readingMinutes}분</span>
-          </div>
+            </div>
+          )}
           <h1 id="post-title" tabIndex={-1} className="text-4xl font-black tracking-tight md:text-5xl">{post.title}</h1>
           {post.description ? (
             <p className="mt-4 text-lg leading-relaxed text-gray-600 dark:text-gray-300">{post.description}</p>

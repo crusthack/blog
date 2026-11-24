@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { readProblem, type Category, type PostSummary } from "@/lib/contracts";
+import { flattenCategories } from "@/lib/categoryTree";
 import { usefulSiteLinks } from "@/lib/siteLinks";
 import { postPath } from "@/lib/postPaths";
 
@@ -97,8 +98,8 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
             <p>불러오는 중…</p>
           ) : categories.length > 0 ? (
             <ul>
-              {categories.map((category) => (
-                <li key={category.id}>
+              {flattenCategories(categories).map(({ category, depth }) => (
+                <li key={category.id} style={{ paddingInlineStart: `${Math.min(depth, 5) * 0.75}rem` }}>
                   <Link href={`/categories/${category.slug}`}>
                     <span>{category.name}</span>{" "}
                     <span aria-label={`${category.postCount}개의 글`}>({category.postCount})</span>
