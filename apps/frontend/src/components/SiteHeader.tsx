@@ -15,7 +15,8 @@ export function SiteHeader() {
   const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
   const { user, isLoading, logout } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
-  const topCategories = categories.filter(category => !category.parentId && category.isVisible);
+  const topCategories = categories.filter(category =>
+    !category.parentId && (category.isVisible ? !category.isHeaderShortcut : Boolean(user?.isOwner)));
   const shortcutCategories = getHeaderShortcuts(categories).filter(category => category.isVisible);
   const hasShortcuts = shortcutCategories.length > 0;
   const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(navigationExternalLinks);
@@ -295,6 +296,7 @@ export function SiteHeader() {
                         onClick={closeMenus}
                       >
                         <span className="truncate">{category.name}</span>
+                        {!category.isVisible && <span className="shrink-0 text-xs text-gray-500 dark:text-gray-400">숨김</span>}
                       </Link>
                     ))
                   ) : (

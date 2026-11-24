@@ -409,10 +409,8 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
                   <CategoryTextField label="이름" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, name: value } : current)} required value={editing.name} />
                   <CategoryTextField label="slug" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, slug: value.toLowerCase() } : current)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={editing.slug} />
                 </div>
-                <label className="block">
-                  <span className="mb-1 block text-xs font-bold text-gray-500">설명</span>
-                  <textarea data-ui="input" className="w-full resize-y px-3 py-2" maxLength={300} onChange={(event) => setEditing((current) => current ? { ...current, description: event.target.value } : current)} rows={3} value={editing.description ?? ""} />
-                </label>
+                <CategoryDescriptionField value={editing.description ?? ""}
+                  onChange={value => setEditing(current => current ? { ...current, description: value } : current)} />
                 <div className="flex flex-wrap items-end gap-3">
                   <label className="block w-28">
                     <span className="mb-1 block text-xs font-bold text-gray-500">표시 순서</span>
@@ -503,17 +501,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
             required
             value={slug}
           />
-          <label className="block">
-            <span className="mb-2 block text-sm font-bold">설명</span>
-            <textarea
-              data-ui="input"
-              className="w-full resize-y border border-gray-300 bg-transparent px-3 py-2.5 dark:border-gray-600"
-              maxLength={300}
-              onChange={(event) => setDescription(event.target.value)}
-              rows={4}
-              value={description}
-            />
-          </label>
+          <CategoryDescriptionField value={description} onChange={setDescription} />
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-bold">표시 순서</span>
@@ -598,6 +586,22 @@ function CategoryParentField({ rows, value, onChange }: {
           {"— ".repeat(Math.min(depth, 6))}{category.name}
         </option>)}
       </select>
+    </label>
+  );
+}
+
+function CategoryDescriptionField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="mb-2 block text-sm font-bold">설명</span>
+      <textarea
+        data-ui="input"
+        className="block max-h-36 min-h-10 w-full resize-y border px-3 py-2 [field-sizing:content]"
+        maxLength={300}
+        onChange={event => onChange(event.target.value)}
+        rows={1}
+        value={value}
+      />
     </label>
   );
 }
