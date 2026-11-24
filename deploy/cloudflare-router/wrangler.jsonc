@@ -1,0 +1,7 @@
+{
+  "name": "crusthack-blog-router",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-01-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "crusthack.com/*", "zone_name": "crusthack.com" }]
+}

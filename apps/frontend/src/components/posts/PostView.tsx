@@ -28,6 +28,7 @@ export function PostView({ postNumber, slideMode = false }: { postNumber: string
 
 function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode: boolean }) {
   const published = usePublished();
+  const AppLink = published ? "a" : Link;
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [post, setPost] = useState<PostDetail | null>(published?.post ?? null);
@@ -163,7 +164,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
       >
         <header className="mb-8 border-b border-gray-200 pb-7 dark:border-gray-700">
           <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-xs font-bold">
-            <Link href={`${published?.origin ?? ""}${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
+            <AppLink href={`${published?.appOrigin ?? ""}${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</AppLink>
             {post.canEdit ? (
               <>
               <Link

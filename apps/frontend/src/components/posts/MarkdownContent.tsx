@@ -70,7 +70,7 @@ export function MarkdownContent({ source, headingIds = true }: { source: string;
         const safe = defaultUrlTransform(value);
         if (!published || !safe || safe.startsWith("#")) return safe;
         const url = new URL(safe, published.origin);
-        return url.origin === published.origin ? (published.links[url.pathname.replace(/\/$/, "") || "/"] ?? (published.origin + url.pathname)) + url.search + url.hash : safe;
+        return url.origin === published.origin ? (published.links[url.pathname.replace(/\/$/, "") || "/"] ?? (published.appOrigin + url.pathname)) + url.search + url.hash : safe;
       }} components={markdownComponents} remarkPlugins={headingIds ? [remarkGfm, remarkHeadingIds] : [remarkGfm]}>{source}</ReactMarkdown>
     </div>
   );

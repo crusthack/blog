@@ -30,6 +30,7 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   origin = new URL(origin).origin;
   const destination = new URL(pagesUrl);
   if (!['https:', 'http:'].includes(destination.protocol) || destination.search || destination.hash || destination.username || destination.password) throw new Error('Invalid PAGES_URL.');
+  const appOrigin = process.env.PAGES_SAME_ORIGIN === "true" && destination.origin === "https://crusthack.com" ? destination.origin : origin;
   const base = basePath(decodeURIComponent(destination.pathname));
   await mkdir(outputDirectory, { recursive: true });
   if ((await readdir(outputDirectory)).length) throw new Error('Output directory must be empty to avoid publishing stale files.');
@@ -66,7 +67,7 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   }
   const generator = [];
   for (const name of files.sort()) generator.push([name, digest((await readFile(path.join(root, name), 'utf8')).replace(/\r\n/g, '\n'))]);
-  const fingerprint = digest(canonical({ schema: 1, origin, pagesUrl: destination.href, snapshot, assets, generator, sourceVersion: process.env.PAGES_SOURCE_VERSION || null }));
+  const fingerprint = digest(canonical({ schema: 1, origin, appOrigin, pagesUrl: destination.href, snapshot, assets, generator, sourceVersion: process.env.PAGES_SOURCE_VERSION || null }));
   // A second complete anonymous read detects changed content, deletion, visibility,
   // pagination, category moves, page overrides and attachment metadata changes.
   assertStable(snapshot, await collectSnapshot(read));
@@ -96,7 +97,7 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   await emit('posts/view.json', JSON.stringify({title:'전체 글'}));
   const posts = snapshot.posts.map(({content,assets,...summary}) => summary);
   const categories = snapshot.categories.map(c => ({...c,postCount:posts.filter(p=>p.categoryId===c.id).length}));
-  await emit('shared.json',JSON.stringify({base,origin,links,posts,categories,externalLinks:snapshot.externalLinks}));
+  await emit('shared.json',JSON.stringify({base,origin,appOrigin,links,posts,categories,externalLinks:snapshot.externalLinks}));
   await emit('.nojekyll', '');
   const routes = ['/', '/posts/', '/about/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
   await emit('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(destination.origin + base + route)}</loc></url>`).join('')}</urlset>`);

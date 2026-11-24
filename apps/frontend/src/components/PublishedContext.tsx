@@ -4,7 +4,7 @@ import type { Category, PostSummary, PostDetail, PostAsset } from "@/lib/contrac
 import type { ExternalLink } from "@/lib/siteLinks";
 
 type Snapshot = {
-  origin: string; base: string; categories: Category[]; posts: PostSummary[];
+  origin: string; appOrigin: string; base: string; categories: Category[]; posts: PostSummary[];
   externalLinks: ExternalLink[]; post?: PostDetail; assets: PostAsset[];
   links: Record<string, string>;
 };

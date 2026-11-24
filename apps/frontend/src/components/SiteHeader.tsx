@@ -12,6 +12,7 @@ import { categoriesUpdatedEvent, externalLinksUpdatedEvent } from "@/lib/uiEvent
 
 export function SiteHeader() {
   const published = usePublished();
+  const AppLink = published ? "a" : Link;
   const pathname = usePathname();
   const categoryPath = pathname.match(/^\/categories\/([^/]+)$/);
   const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
@@ -157,20 +158,20 @@ export function SiteHeader() {
               />
               <span className="brand ml-1.5 hidden sm:inline">Crusthack</span>
             </Link>
-            <Link
+            <AppLink
               className="site-nav-primary-link hidden h-10 items-center whitespace-nowrap px-1.5 font-bold lg:flex"
-              href={`${published?.origin ?? ""}/markdown`}
+              href={`${published?.appOrigin ?? ""}/markdown`}
               onClick={closeMenus}
             >
               Markdown
-            </Link>
-            <Link
+            </AppLink>
+            <AppLink
               className="site-nav-primary-link hidden h-10 items-center whitespace-nowrap px-1.5 font-bold lg:flex"
-              href={`${published?.origin ?? ""}/game`}
+              href={`${published?.appOrigin ?? ""}/game`}
               onClick={closeMenus}
             >
               웹게임
-            </Link>
+            </AppLink>
             <details
               className="group/external relative hidden lg:block"
               onToggle={(event) => {
@@ -220,20 +221,20 @@ export function SiteHeader() {
                 </span>
               </summary>
               <div className="site-nav-dropdown site-nav-dropdown-scroll absolute right-0 z-50 mt-2 w-56 border py-2">
-                <Link
+                <AppLink
                   className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                  href={`${published?.origin ?? ""}/markdown`}
+                  href={`${published?.appOrigin ?? ""}/markdown`}
                   onClick={closeMenus}
                 >
                   Markdown
-                </Link>
-                <Link
+                </AppLink>
+                <AppLink
                   className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold transition"
-                  href={`${published?.origin ?? ""}/game`}
+                  href={`${published?.appOrigin ?? ""}/game`}
                   onClick={closeMenus}
                 >
                   웹게임
-                </Link>
+                </AppLink>
                 <div aria-hidden="true" className="my-1 border-t border-gray-200 dark:border-gray-700" />
                 <ExternalSiteLinks links={externalLinks} onNavigate={closeMenus} />
               </div>
@@ -365,13 +366,13 @@ export function SiteHeader() {
               </details>
               </>
             ) : (
-              <Link
+              <AppLink
                 aria-disabled={isLoading}
                 className="whitespace-nowrap bg-emerald-600 px-2 py-2 font-bold text-white transition hover:bg-emerald-700 sm:px-3"
-                href={`${published?.origin ?? ""}/login`}
+                href={`${published?.appOrigin ?? ""}/login`}
               >
                 {isLoading ? "확인 중" : "로그인"}
-              </Link>
+              </AppLink>
             )}
           </div>
         </div>

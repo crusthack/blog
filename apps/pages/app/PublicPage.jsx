@@ -14,9 +14,9 @@ export default function PublicPage({ shared, view }) {
   return <PublishedContext.Provider value={snapshot}><AuthProvider>
     <SiteHeader />
     {view.post ? <><PostView postNumber={String(view.post.postNumber)} />
-      <LiveComments origin={shared.origin} number={view.post.postNumber} /></> :
+      <LiveComments origin={shared.appOrigin} number={view.post.postNumber} /></> :
       <BlogFrame>{view.content ? <SitePageDocument page={view.page} content={view.content} defaults={view.content}
         revision="" available={false} overridden={false} /> : <PostList categorySlug={view.categorySlug} />}</BlogFrame>}
-    <SiteFooter origin={shared.origin} />
+    <SiteFooter origin={shared.appOrigin} />
   </AuthProvider></PublishedContext.Provider>;
 }

@@ -53,6 +53,7 @@ jobs:
           PAGES_SOURCE_URL: ${{ vars.PAGES_SOURCE_URL || 'https://crusthack.com' }}
           PAGES_URL: ${{ steps.pages.outputs.base_url }}
           PAGES_SOURCE_VERSION: ${{ inputs.source_version }}
+          PAGES_SAME_ORIGIN: ${{ vars.PAGES_SAME_ORIGIN || 'false' }}
           PAGES_FORCE: ${{ inputs.force || false }}
       - name: Upload changed snapshot
         id: upload
