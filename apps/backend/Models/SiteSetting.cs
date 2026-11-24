@@ -11,4 +11,5 @@ public sealed class SiteSetting
 public static class SiteSettingKeys
 {
     public const string ExternalLinks = "external-links";
+    public const string HeaderCategory = "header-category";
 }

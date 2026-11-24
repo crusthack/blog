@@ -23,6 +23,7 @@ export type Category = {
   sortOrder: number;
   isVisible: boolean;
   postCount: number;
+  isHeaderShortcut: boolean;
 };
 
 export type PostVisibility = "Public" | "Private" | "CodeProtected";

@@ -172,6 +172,54 @@ public sealed class SiteSettingsAndHealthTests
         Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync("/api/site-pages/about", request)).StatusCode);
     }
 
+    [Fact]
+    public async Task Header_category_shortcut_is_owner_configured_and_respects_visibility()
+    {
+        using var factory = new SetupApiFactory();
+        using var owner = factory.CreateClient(ClientOptions());
+        using var visitor = factory.CreateClient(ClientOptions());
+        const string categories = "/api/categories";
+        const string shortcut = categories + "/header-shortcut";
+
+        await CreateAndLoginOwnerAsync(owner, "shortcut-owner");
+        var created = await owner.PostAsJsonAsync(categories, new SaveCategoryRequest { Name = "Network", Slug = "network" });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var category = await created.Content.ReadFromJsonAsync<CategoryResponse>();
+        Assert.NotNull(category);
+        var selection = new SetHeaderCategoryRequest { CategoryId = category.Id };
+
+        Assert.False(Assert.Single((await visitor.GetFromJsonAsync<CategoryResponse[]>(categories))!).IsHeaderShortcut);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PutAsJsonAsync(shortcut, selection)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync(shortcut, new SetHeaderCategoryRequest
+        {
+            CategoryId = Guid.NewGuid(),
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync(shortcut, selection)).StatusCode);
+        Assert.True(Assert.Single((await visitor.GetFromJsonAsync<CategoryResponse[]>(categories))!).IsHeaderShortcut);
+
+        var categoryPath = $"{categories}/{category.Id}";
+        var rename = new SaveCategoryRequest { Name = "Networking", Slug = "networking", IsVisible = false };
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync(categoryPath, rename)).StatusCode);
+        Assert.Empty((await visitor.GetFromJsonAsync<CategoryResponse[]>(categories))!);
+        Assert.True(Assert.Single((await owner.GetFromJsonAsync<CategoryResponse[]>(categories))!).IsHeaderShortcut);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutAsJsonAsync(shortcut, selection)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync(categoryPath, new SaveCategoryRequest
+        {
+            Name = rename.Name,
+            Slug = rename.Slug,
+        })).StatusCode);
+        var restored = Assert.Single((await visitor.GetFromJsonAsync<CategoryResponse[]>(categories))!);
+        Assert.Equal("networking", restored.Slug);
+        Assert.True(restored.IsHeaderShortcut);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync(shortcut, new SetHeaderCategoryRequest
+        {
+            CategoryId = null,
+        })).StatusCode);
+        Assert.False(Assert.Single((await visitor.GetFromJsonAsync<CategoryResponse[]>(categories))!).IsHeaderShortcut);
+    }
+
     private static WebApplicationFactoryClientOptions ClientOptions() => new()
     {
         BaseAddress = new Uri("https://localhost"),

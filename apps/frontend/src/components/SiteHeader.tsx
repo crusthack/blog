@@ -14,6 +14,8 @@ export function SiteHeader() {
   const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
   const { user, isLoading, logout } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
+  const shortcutCategory = categories.find(category => category.isHeaderShortcut && category.isVisible);
+  const shortcutHref = shortcutCategory ? `/categories/${encodeURIComponent(shortcutCategory.slug)}` : null;
   const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(navigationExternalLinks);
   const externalMenuRef = useRef<HTMLDetailsElement>(null);
   const publicMenuRef = useRef<HTMLDetailsElement>(null);
@@ -124,9 +126,11 @@ export function SiteHeader() {
     <header className="print:hidden">
       <nav
         aria-label="주요 메뉴"
-        className="site-nav h-16 w-full border-b border-gray-200 bg-gray-50 transition-colors dark:border-gray-800 dark:bg-[#292929]"
+        className={`site-nav w-full border-b border-gray-200 bg-gray-50 transition-colors dark:border-gray-800 dark:bg-[#292929] ${shortcutCategory ? "lg:h-16" : "h-16"}`}
       >
-        <div className="mx-auto flex h-full w-full max-w-[1200px] items-center justify-between px-2 sm:px-6">
+        <div className={`mx-auto w-full max-w-[1200px] items-center px-2 sm:px-6 ${shortcutCategory
+          ? "grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(4rem,auto)_auto] lg:h-full lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-rows-1"
+          : "flex h-full justify-between"}`}>
           <div className="flex min-w-0 items-center gap-0">
             <Link
               aria-label="메인 페이지"
@@ -186,7 +190,7 @@ export function SiteHeader() {
             </details>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+          <div className={`flex shrink-0 items-center gap-1 sm:gap-2 ${shortcutCategory ? "col-start-2 row-start-1 max-[350px]:gap-0 max-[350px]:[&>details>summary]:px-1" : ""}`}>
             <ThemeToggle />
             <details
               className="group/public-menu relative lg:hidden"
@@ -223,11 +227,22 @@ export function SiteHeader() {
                 >
                   웹게임
                 </Link>
+                {shortcutCategory && (
+                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold md:hidden" href="/about" onClick={closeMenus}>
+                    개발자소개
+                  </Link>
+                )}
                 <div aria-hidden="true" className="my-1 border-t border-gray-200 dark:border-gray-700" />
                 <ExternalSiteLinks links={externalLinks} onNavigate={closeMenus} />
               </div>
             </details>
-            <Link className="site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold sm:px-3" href="/about" onClick={closeMenus}>개발자소개</Link>
+            <Link
+              className={`site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold sm:px-3 ${shortcutCategory ? "max-md:hidden" : ""}`}
+              href="/about"
+              onClick={closeMenus}
+            >
+              개발자소개
+            </Link>
             <details
               className="group/categories relative"
               onToggle={(event) => {
@@ -296,7 +311,7 @@ export function SiteHeader() {
                 }}
                 ref={ownerMenuRef}
               >
-                <summary className="flex max-w-24 cursor-pointer list-none items-center gap-1 bg-emerald-600 px-2 py-2 font-bold text-white transition hover:bg-emerald-700 sm:max-w-40 sm:px-3">
+                <summary className={`flex max-w-24 cursor-pointer list-none items-center gap-1 bg-emerald-600 px-2 py-2 font-bold text-white transition hover:bg-emerald-700 sm:px-3 ${shortcutCategory ? "max-[440px]:max-w-16 xl:max-w-40" : "sm:max-w-40"}`}>
                   <span className="truncate">{user.username}</span>
                   <span
                     aria-hidden="true"
@@ -334,6 +349,17 @@ export function SiteHeader() {
               </Link>
             )}
           </div>
+          {shortcutCategory && shortcutHref && (
+            <Link
+              aria-current={pathname === shortcutHref ? "page" : undefined}
+              className="site-nav-link col-span-2 row-start-2 mb-1.5 max-w-full truncate justify-self-end border border-emerald-600/50 px-2.5 py-1.5 text-sm font-bold text-emerald-800 aria-[current=page]:bg-emerald-500/15 lg:col-span-1 lg:col-start-3 lg:row-start-1 lg:mb-0 lg:ml-2 lg:max-w-32 xl:max-w-40 dark:text-emerald-300"
+              href={shortcutHref}
+              onClick={closeMenus}
+              title={shortcutCategory.name}
+            >
+              {shortcutCategory.name}
+            </Link>
+          )}
         </div>
       </nav>
     </header>

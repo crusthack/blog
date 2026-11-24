@@ -18,9 +18,10 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
     [AllowAnonymous]
     [HttpGet]
     [EnableRateLimiting("public-read")]
-    public async Task<ActionResult<IReadOnlyList<CategoryResponse>>> GetCategories()
+    public async Task<ActionResult<IReadOnlyList<CategoryResponse>>> GetCategories(CancellationToken cancellationToken)
     {
         var canManage = User.IsInRole(Roles.Owner);
+        var headerCategoryId = await ReadHeaderCategoryId(cancellationToken);
         var query = db.Categories.AsNoTracking();
         if (!canManage)
             query = query.Where(category => category.IsVisible);
@@ -36,10 +37,48 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
                 category.SortOrder,
                 category.IsVisible,
                 category.Posts.Count(post => canManage ||
-                    post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected)))
-            .ToListAsync();
+                    post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected),
+                category.Id == headerCategoryId))
+            .ToListAsync(cancellationToken);
 
         return Ok(categories);
+    }
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpPut("header-shortcut")]
+    public async Task<IActionResult> SetHeaderShortcut(SetHeaderCategoryRequest request, CancellationToken cancellationToken)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (request.CategoryId is Guid categoryId &&
+            !await db.Categories.AnyAsync(category => category.Id == categoryId && category.IsVisible, cancellationToken))
+        {
+            return BadRequest(new ProblemDetails { Title = "공개 카테고리를 선택해 주세요." });
+        }
+
+        var setting = await db.SiteSettings.SingleOrDefaultAsync(
+            item => item.Key == SiteSettingKeys.HeaderCategory, cancellationToken);
+
+        if (request.CategoryId is null)
+        {
+            if (setting is not null) db.SiteSettings.Remove(setting);
+        }
+        else if (setting is null)
+        {
+            db.SiteSettings.Add(new SiteSetting
+            {
+                Key = SiteSettingKeys.HeaderCategory,
+                Value = request.CategoryId.Value.ToString(),
+            });
+        }
+        else
+        {
+            setting.Value = request.CategoryId.Value.ToString();
+            setting.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return NoContent();
     }
 
     [Authorize(Roles = Roles.Owner)]
@@ -94,7 +133,7 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         category.IsVisible = request.IsVisible;
         category.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync();
-        return Ok(ToResponse(category, category.Posts.Count));
+        return Ok(ToResponse(category, category.Posts.Count, category.Id == await ReadHeaderCategoryId()));
     }
 
     [Authorize(Roles = Roles.Owner)]
@@ -118,12 +157,26 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 
     private static string NormalizeSlug(string value) => value.Trim().ToLowerInvariant();
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    private static CategoryResponse ToResponse(Category category, int postCount) => new(
+    private static CategoryResponse ToResponse(Category category, int postCount, bool isHeaderShortcut = false) => new(
         category.Id, category.Name, category.Slug, category.Description,
-        category.SortOrder, category.IsVisible, postCount);
+        category.SortOrder, category.IsVisible, postCount, isHeaderShortcut);
+
+    private async Task<Guid?> ReadHeaderCategoryId(CancellationToken cancellationToken = default)
+    {
+        var value = await db.SiteSettings
+            .Where(item => item.Key == SiteSettingKeys.HeaderCategory)
+            .Select(item => item.Value)
+            .SingleOrDefaultAsync(cancellationToken);
+        return Guid.TryParse(value, out var id) ? id : null;
+    }
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$")]
     private static partial Regex SlugPattern();
+}
+
+public sealed class SetHeaderCategoryRequest
+{
+    public required Guid? CategoryId { get; init; }
 }
 
 public sealed class SaveCategoryRequest
@@ -150,4 +203,5 @@ public sealed record CategoryResponse(
     string? Description,
     int SortOrder,
     bool IsVisible,
-    int PostCount);
+    int PostCount,
+    bool IsHeaderShortcut = false);

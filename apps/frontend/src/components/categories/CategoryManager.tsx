@@ -27,6 +27,14 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null);
+  const [shortcutDraft, setShortcutDraft] = useState<string | null>(null);
+  const [isSavingShortcut, setIsSavingShortcut] = useState(false);
+  const savedShortcut = categories.find(category => category.isHeaderShortcut);
+  const visibleCategories = categories.filter(category => category.isVisible);
+  const selectedShortcutId = shortcutDraft === ""
+    ? ""
+    : visibleCategories.find(category => category.id === shortcutDraft)?.id ?? savedShortcut?.id ?? "";
+  const shortcutChanged = selectedShortcutId !== (savedShortcut?.id ?? "");
 
   const load = useCallback(async () => {
     const response = await fetch("/api/categories", { cache: "no-store", credentials: "include" });
@@ -51,7 +59,16 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.",
         ));
     }, 0);
-    return () => window.clearTimeout(timer);
+    function refreshCategories() {
+      void load().catch((reason: unknown) => setError(
+        reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.",
+      ));
+    }
+    window.addEventListener(categoriesUpdatedEvent, refreshCategories);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(categoriesUpdatedEvent, refreshCategories);
+    };
   }, [isAuthLoading, load, router, user]);
 
   async function createCategory(event: FormEvent<HTMLFormElement>) {
@@ -148,6 +165,34 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     }
   }
 
+  async function saveHeaderShortcut(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!shortcutChanged || isSavingShortcut) return;
+    setIsSavingShortcut(true);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/categories/header-shortcut", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ categoryId: selectedShortcutId || null }),
+      });
+      if (!response.ok) throw new Error(await readProblem(response, "상단 바로가기를 저장하지 못했습니다."));
+      setCategories(current => current.map(category => ({
+        ...category,
+        isHeaderShortcut: category.id === selectedShortcutId,
+      })));
+      setShortcutDraft(null);
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+      setMessage(selectedShortcutId ? "상단 카테고리 바로가기를 저장했습니다." : "상단 카테고리 바로가기를 해제했습니다.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "상단 바로가기를 저장하지 못했습니다.");
+    } finally {
+      setIsSavingShortcut(false);
+    }
+  }
+
   if (isAuthLoading || !user?.isOwner) {
     return <Container className="mx-auto max-w-6xl p-10 text-gray-500 dark:text-gray-400">권한을 확인하고 있습니다.</Container>;
   }
@@ -171,6 +216,35 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           </p>
         ) : null}
       </div>
+      <form data-ui="panel" className="mb-6 bg-white p-6 dark:bg-[#252525]" onSubmit={saveHeaderShortcut}>
+        <h2 className="text-2xl font-black">상단 카테고리 바로가기</h2>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+          공개 카테고리 하나를 선택하면 방문자에게 블로그 우측 상단에 바로가기 링크가 표시됩니다.
+        </p>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <label className="block min-w-0 flex-1 sm:max-w-sm">
+            <span className="mb-1 block text-sm font-bold">바로가기 카테고리</span>
+            <select
+              data-ui="input"
+              className="w-full px-3 py-2"
+              disabled={isSavingShortcut}
+              onChange={event => { setShortcutDraft(event.target.value); setMessage(""); }}
+              value={selectedShortcutId}
+            >
+              <option value="">표시 안 함</option>
+              {savedShortcut && !savedShortcut.isVisible && (
+                <option value={savedShortcut.id} disabled>{savedShortcut.name} (비공개)</option>
+              )}
+              {visibleCategories.map(category => (
+                <option key={category.id} value={category.id}>{category.name}</option>
+              ))}
+            </select>
+          </label>
+          <button className={primaryButton} disabled={!shortcutChanged || isSavingShortcut} type="submit">
+            {isSavingShortcut ? "저장 중..." : "바로가기 저장"}
+          </button>
+        </div>
+      </form>
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
         <form data-ui="panel" className="space-y-5 bg-white p-6 dark:bg-[#252525]" onSubmit={createCategory}>
           <h2 className="text-2xl font-black">새 카테고리</h2>

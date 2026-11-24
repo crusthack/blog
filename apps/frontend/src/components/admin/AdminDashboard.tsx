@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AdminDrive } from "./AdminDrive";
+import { MarkdownFolderImport } from "./MarkdownFolderImport";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { PostList } from "@/components/posts/PostList";
@@ -14,7 +15,7 @@ import { readProblem, visibilityLabels, type PostVisibility } from "@/lib/contra
 import { postPath } from "@/lib/postPaths";
 
 const sections = [
-  ["overview", "전체 현황"], ["posts", "게시글"], ["categories", "카테고리"],
+  ["overview", "전체 현황"], ["posts", "게시글"], ["import", "폴더 업로드"], ["categories", "카테고리"],
   ["reports", "신고"], ["members", "회원"], ["invites", "초대"],
   ["settings", "사이트 설정"], ["trash", "휴지통"], ["storage", "첨부 파일"],
   ["drive", "관리자 클라우드"], ["audit", "감사 기록"], ["health", "서비스 상태"],
@@ -66,6 +67,7 @@ function Dashboard() {
       <div className="admin-content">{sections.map(([id, title]) => visited.includes(id) && <div key={id} className="admin-panel" hidden={section !== id} aria-label={title}>
         {id === "overview" ? <OverviewPanel active={section === "overview"} />
           : id === "posts" ? <PostList manage embedded />
+          : id === "import" ? <MarkdownFolderImport />
           : id === "categories" ? <CategoryManager embedded />
           : id === "settings" ? <SiteSettingsManager embedded />
           : id === "trash" || id === "storage" ? <OwnerMaintenance tab={id} embedded />
