@@ -23,10 +23,16 @@ export function createReader(origin, { interval = 650, fetchImpl = fetch } = {})
     if (url.origin !== base.origin || !url.pathname.startsWith('/api/')) throw new Error('Invalid export API URL.');
     await delay(Math.max(0, nextRequest - Date.now()));
     nextRequest = Date.now() + interval;
-    const response = await fetchImpl(url, {
+    let response;
+    for (let attempt = 0; ; attempt++) {
+      response = await fetchImpl(url, {
       redirect: 'error', credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(60000),
       headers: { Accept: binary ? '*/*' : 'application/json' },
     });
+      if (![502, 503, 504, 521, 522, 524].includes(response.status) || attempt >= 4 || interval === 0) break;
+      await response.body?.cancel();
+      await delay(2000 * 2 ** attempt);
+    }
     if (!response.ok) throw new Error(`Source returned ${response.status}: ${url.pathname}`);
     return binary ? Buffer.from(await response.arrayBuffer()) : response.json();
   };
