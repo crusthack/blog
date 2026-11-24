@@ -31,6 +31,7 @@ export function MarkdownFolderImport() {
   async function readFolder(files: File[]) {
     if (!files.length) return;
     setBusy("reading");
+    setVisibility("Private");
     setRows([]);
     setError("");
     setMessage("");
@@ -129,7 +130,7 @@ export function MarkdownFolderImport() {
             <>
               <div className="board-filters">
                 <label>
-                  공개 범위{" "}
+                  새 카테고리와 글의 공개 범위{" "}
                   <select value={visibility} onChange={event => setVisibility(event.target.value === "Public" ? "Public" : "Private")}>
                     <option value="Private">비공개</option>
                     <option value="Public">공개</option>

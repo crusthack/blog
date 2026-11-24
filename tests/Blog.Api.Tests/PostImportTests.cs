@@ -72,6 +72,14 @@ public sealed class PostImportTests
         Assert.Contains(posts, post => post.Title == "Root" && post.CategoryName == "posts");
         Assert.Contains(posts, post => post.Title == "소개" && post.CategoryName == "한글");
         Assert.All(posts, post => Assert.Equal(PostVisibility.Private, post.Visibility));
+        var importedCategories = (await owner.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!;
+        Assert.True(Assert.Single(importedCategories, item => item.Name == "Network").IsVisible);
+        Assert.All(importedCategories.Where(item => item.Name != "Network"), category =>
+        {
+            Assert.False(category.IsVisible);
+            Assert.False(category.IsLocallyVisible);
+        });
+        Assert.Equal("Network", Assert.Single((await visitor.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!).Name);
         Assert.Empty((await visitor.GetFromJsonAsync<PostSummaryResponse[]>("/api/posts"))!);
         var first = await owner.GetFromJsonAsync<PostDetailResponse>($"/api/posts/{imported[0].PostNumber}");
         Assert.Equal(new DateTime(2025, 12, 27, 0, 0, 0, DateTimeKind.Utc), first!.CreatedAtUtc);
@@ -82,5 +90,14 @@ public sealed class PostImportTests
         Assert.NotNull(skipped);
         Assert.Equal(imported.Select(item => item.PostNumber), skipped.Select(item => item.PostNumber));
         Assert.All(skipped, item => Assert.True(item.Skipped));
+
+        var publicImport = await owner.PostAsJsonAsync(endpoint, new ImportMarkdownRequest
+        {
+            Files = [new() { RelativePath = "posts/Published/intro.md", Title = "Intro", Content = "# Intro" }],
+            Visibility = PostVisibility.Public,
+        });
+        Assert.Equal(HttpStatusCode.OK, publicImport.StatusCode);
+        Assert.Contains((await visitor.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!, item => item.Name == "Published");
+        Assert.Equal(PostVisibility.Public, Assert.Single((await visitor.GetFromJsonAsync<PostSummaryResponse[]>("/api/posts"))!).Visibility);
     }
 }

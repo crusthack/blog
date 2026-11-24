@@ -3,12 +3,12 @@ import type { Category } from "@/lib/contracts";
 
 type Props = {
   branches: ReadonlyMap<string | null, Category[]>;
-  collapsed: ReadonlySet<string>;
+  expandedIds: ReadonlySet<string>;
   onToggle: (id: string) => void;
   renderCategory: (category: Category, disclosure: ReactNode) => ReactNode;
 };
 
-export function CategoryTree({ branches, collapsed, onToggle, renderCategory }: Props) {
+export function CategoryTree({ branches, expandedIds, onToggle, renderCategory }: Props) {
   return (
     <ul aria-label="카테고리 계층" className="category-tree-branch">
       {renderBranch(null)}
@@ -18,7 +18,7 @@ export function CategoryTree({ branches, collapsed, onToggle, renderCategory }: 
   function renderBranch(parentId: string | null): ReactNode {
     return branches.get(parentId)?.map(category => {
       const childCount = branches.get(category.id)?.length ?? 0;
-      const expanded = childCount > 0 && !collapsed.has(category.id);
+      const expanded = childCount > 0 && expandedIds.has(category.id);
       const disclosure = childCount > 0 && (
         <button
           type="button"

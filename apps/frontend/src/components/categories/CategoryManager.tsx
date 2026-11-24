@@ -6,6 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, readProblem } from "@/lib/contracts";
 import { canUseCategoryParent, flattenCategories, groupCategories } from "@/lib/categoryTree";
 import { CategoryTree } from "./CategoryTree";
+import { CategoryDiagram } from "./CategoryDiagram";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 
 type CategoryDraft = Pick<
@@ -34,7 +35,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const [isSavingShortcut, setIsSavingShortcut] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [moveTarget, setMoveTarget] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
@@ -108,7 +109,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       setDescription("");
       setIsVisible(true);
       const loaded = await load();
-      expandCategoryPath(parentId || null);
       setSortOrder(nextSortOrder(loaded));
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리를 추가했습니다.");
@@ -139,23 +139,10 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   }
 
   function toggleBranch(id: string) {
-    setCollapsed(current => {
+    setExpandedIds(current => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      return next;
-    });
-  }
-
-  function expandCategoryPath(id: string | null) {
-    if (!id) return;
-    setCollapsed(current => {
-      const next = new Set(current);
-      let categoryId: string | null = id;
-      while (categoryId) {
-        next.delete(categoryId);
-        categoryId = categoriesById.get(categoryId)?.parentId ?? null;
-      }
       return next;
     });
   }
@@ -182,7 +169,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 저장하지 못했습니다."));
       await load();
-      expandCategoryPath(editing.parentId ?? null);
       setEditing(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리 변경사항을 저장했습니다.");
@@ -194,7 +180,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   }
 
   async function deleteCategory(category: Category) {
-    if (!window.confirm(`'${category.name}' 카테고리를 삭제할까요?`)) return;
+    if (!window.confirm(`'${category.name}'와 모든 하위 카테고리를 삭제하고, 그 안의 글을 휴지통으로 이동할까요?`)) return;
     setBusyCategoryId(category.id);
     setError("");
     setMessage("");
@@ -207,7 +193,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       if (editing?.id === category.id) setEditing(null);
       await load();
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
-      setMessage("카테고리를 삭제했습니다.");
+      setMessage("카테고리를 삭제했습니다. 소속 글은 휴지통에서 복원할 수 있습니다.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "카테고리를 삭제하지 못했습니다.");
     } finally {
@@ -303,7 +289,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 이동하지 못했습니다."));
       await load();
-      expandCategoryPath(target);
       setSelectedIds(current => {
         const next = new Set(current);
         for (const id of ids) next.delete(id);
@@ -341,15 +326,16 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           </p>
         ) : null}
       </div>
+      <CategoryDiagram branches={branches} />
       <section data-ui="panel" className="category-tree-panel mb-6 bg-white p-4 sm:p-6 dark:bg-[#252525]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-black">카테고리 트리</h2>
+          <h2 className="text-2xl font-black">카테고리 목록</h2>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-gray-500 dark:text-gray-400">최상위 {rootCount}개 · 전체 {categories.length}개</span>
-            <button type="button" className={neutralButton} disabled={draggedId !== null || branchIds.every(id => collapsed.has(id))}
-              onClick={() => setCollapsed(new Set(branchIds))}>모두 접기</button>
-            <button type="button" className={neutralButton} disabled={draggedId !== null || !branchIds.some(id => collapsed.has(id))}
-              onClick={() => setCollapsed(new Set())}>모두 펼치기</button>
+            <button type="button" className={neutralButton} disabled={draggedId !== null || !branchIds.some(id => expandedIds.has(id))}
+              onClick={() => setExpandedIds(new Set())}>모두 접기</button>
+            <button type="button" className={neutralButton} disabled={draggedId !== null || branchIds.every(id => expandedIds.has(id))}
+              onClick={() => setExpandedIds(new Set(branchIds))}>모두 펼치기</button>
           </div>
         </div>
         <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">여러 카테고리를 체크해 함께 이동하거나, 체크한 항목 하나를 끌어 선택한 항목을 함께 옮길 수 있습니다.</p>
@@ -395,7 +381,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         </div>
         {categories.length === 0 ? <p className="mt-4 text-sm text-gray-500">아직 카테고리가 없습니다.</p> : (
           <div className="category-tree-scroll">
-            <CategoryTree branches={branches} collapsed={collapsed} onToggle={toggleBranch} renderCategory={(category, disclosure) => editing?.id === category.id ? (
+            <CategoryTree branches={branches} expandedIds={expandedIds} onToggle={toggleBranch} renderCategory={(category, disclosure) => editing?.id === category.id ? (
               <form data-ui="row" className="space-y-4 border border-emerald-300 p-4 dark:border-emerald-800" onSubmit={updateCategory}>
                 <div className="flex items-center gap-2">
                   {disclosure}
@@ -468,10 +454,9 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
                   <button className={neutralButton} disabled={busy} onClick={() => beginEdit(category)} type="button">수정</button>
                   <button
                     className="border border-red-300 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                    disabled={category.postCount > 0 || branches.has(category.id) || busy}
+                    disabled={busy}
                     onClick={() => void deleteCategory(category)}
-                    title={branches.has(category.id) ? "하위 카테고리를 먼저 이동하거나 삭제해 주세요."
-                      : category.postCount > 0 ? "게시글이 있는 카테고리는 삭제할 수 없습니다." : undefined}
+                    aria-label={`${category.name} 삭제`}
                     type="button"
                   >
                     {busyCategoryId === category.id ? "처리 중..." : "삭제"}

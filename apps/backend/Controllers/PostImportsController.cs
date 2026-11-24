@@ -49,6 +49,7 @@ public sealed partial class PostImportsController(BlogDbContext db) : Controller
         usedSlugs.Add("uncategorized");
         var counter = await db.PostCounters.SingleAsync(item => item.Id == 1, cancellationToken);
         var now = DateTime.UtcNow;
+        var newCategoriesAreVisible = request.Visibility == PostVisibility.Public;
         var imported = new Dictionary<(Guid CategoryId, string Title, string? Description, string Content), long>();
         var results = new List<ImportedMarkdownFile>();
 
@@ -56,7 +57,13 @@ public sealed partial class PostImportsController(BlogDbContext db) : Controller
         {
             if (!categoriesByName.TryGetValue(categoryName, out var category))
             {
-                category = new Category { Name = categoryName, Slug = CreateSlug(categoryName, usedSlugs) };
+                category = new Category
+                {
+                    Name = categoryName,
+                    Slug = CreateSlug(categoryName, usedSlugs),
+                    IsLocallyVisible = newCategoriesAreVisible,
+                    IsVisible = newCategoriesAreVisible,
+                };
                 categoriesByName.Add(categoryName, category);
                 db.Categories.Add(category);
             }

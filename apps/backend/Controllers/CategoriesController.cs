@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
 using Blog.Api.Auth;
 using Blog.Api.Data;
@@ -179,19 +180,34 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> Delete(Guid id)
     {
+        if (!Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var actorId)) return Unauthorized();
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var category = await db.Categories.FindAsync(id);
-        if (category is null) return NotFound();
-        if (await db.Categories.AnyAsync(item => item.ParentId == id))
-            return Conflict(new ProblemDetails { Title = "하위 카테고리를 먼저 이동하거나 삭제해 주세요." });
-        if (await db.Posts.AnyAsync(post => post.CategoryId == id))
-            return Conflict(new ProblemDetails
-            {
-                Title = "글이 연결된 카테고리는 삭제할 수 없습니다.",
-                Detail = "먼저 글을 다른 카테고리로 이동해 주세요.",
-            });
+        var categories = await db.Categories.ToDictionaryAsync(category => category.Id);
+        if (!categories.TryGetValue(id, out var root)) return NotFound();
+        var children = categories.Values.ToLookup(category => category.ParentId);
+        var subtree = new List<Category> { root };
+        for (var index = 0; index < subtree.Count; index++)
+        {
+            subtree.AddRange(children[subtree[index].Id]);
+        }
 
-        db.Categories.Remove(category);
+        var subtreeIds = subtree.Select(category => category.Id).ToHashSet();
+        var posts = await db.Posts
+            .Where(post => post.CategoryId != null && subtreeIds.Contains(post.CategoryId.Value))
+            .ToListAsync();
+        var now = DateTime.UtcNow;
+        foreach (var post in posts)
+        {
+            post.MoveToTrash(now);
+            db.AuditEvents.Add(new AuditEvent { ActorId = actorId, Action = "post.trash", Target = post.PostNumber.ToString() });
+        }
+
+        var shortcut = await db.SiteSettings.SingleOrDefaultAsync(setting => setting.Key == SiteSettingKeys.HeaderCategory);
+        if (shortcut is not null && Guid.TryParse(shortcut.Value, out var pinnedId) && subtreeIds.Contains(pinnedId))
+            db.SiteSettings.Remove(shortcut);
+
+        subtree.Reverse();
+        db.Categories.RemoveRange(subtree);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
         return NoContent();

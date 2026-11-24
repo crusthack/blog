@@ -220,10 +220,8 @@ public sealed class PostsController(
         var post = await db.Posts.SingleOrDefaultAsync(post => post.PostNumber == postNumber);
         if (post is null) return NotFound();
         if (!PostAccessService.CanManage(post, HttpContext)) return Forbid();
-        post.Revision++;
+        post.MoveToTrash(DateTime.UtcNow);
         Audit("post.trash", postNumber);
-        post.DeletedAtUtc = DateTime.UtcNow;
-        post.AccessCodeVersion = Guid.NewGuid();
         try { await db.SaveChangesAsync(); } catch (DbUpdateConcurrencyException) { return Conflict(); }
         logger.LogInformation("Post {PostNumber} moved to trash by {UserId}.", postNumber, User.FindFirstValue(ClaimTypes.NameIdentifier));
         return NoContent();

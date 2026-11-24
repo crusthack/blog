@@ -21,6 +21,13 @@ public sealed class Post
     public DateTime? PublishedAtUtc { get; set; }
     public DateTime? DeletedAtUtc { get; set; }
     public ICollection<PostAsset> Assets { get; set; } = [];
+
+    public void MoveToTrash(DateTime now)
+    {
+        Revision++;
+        DeletedAtUtc = now;
+        AccessCodeVersion = Guid.NewGuid();
+    }
 }
 
 public static class PostVisibility

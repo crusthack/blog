@@ -38,6 +38,80 @@
   .admin-metric { padding: .8rem; }
 }
 
+.category-diagram {
+  --diagram-line: var(--muted);
+  max-block-size: 28rem;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: .5rem;
+  background: var(--surface-subtle);
+}
+.category-diagram-canvas {
+  display: grid;
+  justify-items: center;
+  inline-size: max-content;
+  min-inline-size: 100%;
+  padding: 1rem;
+}
+.category-diagram-root,
+.category-diagram-node {
+  position: relative;
+  display: grid;
+  gap: .2rem;
+  place-content: center;
+  min-inline-size: 7rem;
+  max-inline-size: 13rem;
+  min-block-size: 2.4rem;
+  padding: .4rem .65rem;
+  border: 1px solid var(--border-soft);
+  border-radius: .45rem;
+  background: var(--surface);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.category-diagram-root { color: var(--accent-strong); border-color: currentColor; font-weight: 800; }
+.category-diagram-node[data-hidden="true"] { border-style: dashed; }
+.category-diagram-node small { color: var(--muted); }
+.category-diagram-level {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 1rem 0 0;
+  list-style: none;
+}
+.category-diagram-level::before {
+  content: "";
+  position: absolute;
+  inset-block: 0 auto;
+  inset-inline-start: 50%;
+  block-size: 1rem;
+  border-inline-start: 1px solid var(--diagram-line);
+}
+.category-diagram-level > li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem .45rem 0;
+}
+.category-diagram-level > li::before,
+.category-diagram-level > li::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inline-size: 50%;
+  block-size: 1rem;
+  border-block-start: 1px solid var(--diagram-line);
+}
+.category-diagram-level > li::before { inset-inline-end: 50%; }
+.category-diagram-level > li::after {
+  inset-inline-start: 50%;
+  border-inline-start: 1px solid var(--diagram-line);
+}
+.category-diagram-level > li:first-child::before,
+.category-diagram-level > li:last-child::after { border-block-start: 0; }
+
 .category-tree-panel {
   --tree-indent: clamp(.7rem, 2.5vw, 1.75rem);
   --tree-line: var(--border-soft);

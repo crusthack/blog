@@ -59,7 +59,6 @@ public sealed class CategoryVisibilityTests
         Assert.True(leaf.IsLocallyVisible);
         Assert.Empty((await visitor.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!);
 
-        Assert.Equal(HttpStatusCode.Conflict, (await owner.DeleteAsync($"/api/categories/{category.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, await SetParent(owner, category.Id, leaf.Id));
         Assert.Equal(HttpStatusCode.Unauthorized, await SetParent(visitor, child.Id, null));
 
@@ -140,6 +139,23 @@ public sealed class CategoryVisibilityTests
         Assert.Equal(protectedPost.PostNumber, codeProtected.PostNumber);
         Assert.False(codeProtected.CategoryIsHidden);
         Assert.Empty((await owner.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.Private))!.Items);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.DeleteAsync($"/api/categories/{category.Id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/categories/{category.Id}")).StatusCode);
+        var remaining = Assert.Single((await owner.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!);
+        Assert.Equal(sibling.Id, remaining.Id);
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/posts/{post.PostNumber}")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/posts/{protectedPost.PostNumber}")).StatusCode);
+
+        var trash = (await owner.GetFromJsonAsync<TrashItem[]>("/api/posts/trash"))!;
+        Assert.Equal(2, trash.Length);
+        Assert.Contains(trash, item => item.PostNumber == post.PostNumber);
+        Assert.Contains(trash, item => item.PostNumber == protectedPost.PostNumber);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PostAsync($"/api/posts/{post.PostNumber}/restore", null)).StatusCode);
+        var restored = await owner.GetFromJsonAsync<PostDetailResponse>($"/api/posts/{post.PostNumber}");
+        Assert.NotNull(restored);
+        Assert.Null(restored.CategoryId);
+        Assert.Equal(PostVisibility.Private, restored.Visibility);
     }
 
     private static async Task<CategoryResponse> CreateCategory(HttpClient owner, string slug, Guid parentId)
@@ -161,4 +177,5 @@ public sealed class CategoryVisibilityTests
         (await client.PutAsJsonAsync("/api/categories/parents", new SetCategoryParentsRequest { CategoryIds = ids, ParentId = parentId })).StatusCode;
 
     private sealed record DirectoryResult(PostSummaryResponse[] Items);
+    private sealed record TrashItem(long PostNumber);
 }
