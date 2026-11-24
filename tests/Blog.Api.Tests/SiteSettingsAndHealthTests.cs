@@ -88,6 +88,14 @@ public sealed class SiteSettingsAndHealthTests
                 "/api/site-settings/external-links"));
         Assert.Equal(["Alpha", "Beta"], publicLinks.Select(link => link.Name));
         Assert.All(publicLinks, link => Assert.True(link.IsVisible));
+
+        const string sidebar = "/api/site-settings/useful-links";
+        var defaults = await visitor.GetFromJsonAsync<ExternalLinkPayload[]>(sidebar);
+        Assert.Contains(defaults!, link => link.Name == "LeetCode");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.GetAsync(sidebar + "/manage")).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync(sidebar, new SaveExternalLinksPayload([]))).StatusCode);
+        Assert.Empty((await visitor.GetFromJsonAsync<ExternalLinkPayload[]>(sidebar))!);
+        Assert.Equal(publicLinks, await visitor.GetFromJsonAsync<ExternalLinkPayload[]>("/api/site-settings/external-links"));
     }
 
     [Fact]

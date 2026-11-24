@@ -71,7 +71,8 @@ export async function collectSnapshot(read) {
   const pages = {};
   for (const page of ['home', 'about']) pages[page] = await read(`/api/site-pages/${page}`);
   const externalLinks = await read('/api/site-settings/external-links');
-  return { categories, posts, pages, externalLinks };
+  const usefulLinks = await read('/api/site-settings/useful-links');
+  return { categories, posts, pages, externalLinks, usefulLinks };
 }
 
 export function assertStable(before, after) {

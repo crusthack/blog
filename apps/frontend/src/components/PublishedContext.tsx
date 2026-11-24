@@ -5,7 +5,7 @@ import type { ExternalLink } from "@/lib/siteLinks";
 
 type Snapshot = {
   origin: string; appOrigin: string; base: string; categories: Category[]; posts: PostSummary[];
-  externalLinks: ExternalLink[]; post?: PostDetail; assets: PostAsset[];
+  usefulLinks: ExternalLink[]; externalLinks: ExternalLink[]; post?: PostDetail; assets: PostAsset[];
   links: Record<string, string>;
 };
 export const PublishedContext = createContext<Snapshot | null>(null);

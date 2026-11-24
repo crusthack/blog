@@ -115,7 +115,7 @@ function OverviewPanel({ active }: { active: boolean }) {
         ["카테고리", overview.categories, "categories", "분류·순서·공개 여부"],
         ["유효한 초대", overview.invites, "invites", "미사용 초대 코드"],
         ["등록 첨부", overview.assets, "storage", `${(overview.assetBytes / 1024 / 1024).toFixed(1)} MB · 휴지통 포함`],
-        ["사이트 설정", "관리", "settings", "외부 사이트 메뉴·링크"],
+        ["사이트 설정", "관리", "settings", "외부 사이트·유용한 사이트"],
       ].map(([label, value, target, hint]) => <a href={`#${target}`} className="admin-metric" key={target}><span>{label}</span><strong>{typeof value === "number" ? value.toLocaleString() : value}</strong><small>{hint}</small></a>)}</div>
       {overview.reports > 0 && <p className="admin-attention"><a href="#reports">미처리 신고 {overview.reports}건을 확인해 주세요 →</a></p>}
       <div className="admin-overview-columns"><section><div className="admin-section-heading"><h3>최근 수정한 글</h3><a href="#posts">전체 관리 →</a></div><ul className="admin-activity">{overview.recentPosts.map(post => <li key={post.postNumber}><div><Link href={`/write/${post.postNumber}`}>{post.title}</Link><small>{visibilityLabels[effectivePostVisibility(post)]}{post.categoryIsHidden && " (카테고리 숨김)"} · {new Date(post.updatedAtUtc).toLocaleString("ko-KR")}</small></div><Link href={postPath(post)} aria-label={`${post.title} 보기`}>보기</Link></li>)}{!overview.recentPosts.length && <li>등록된 글이 없습니다.</li>}</ul></section>

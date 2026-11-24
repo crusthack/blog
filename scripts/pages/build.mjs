@@ -97,7 +97,7 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   await emit('posts/view.json', JSON.stringify({title:'전체 글'}));
   const posts = snapshot.posts.map(({content,assets,...summary}) => summary);
   const categories = snapshot.categories.map(c => ({...c,postCount:posts.filter(p=>p.categoryId===c.id).length}));
-  await emit('shared.json',JSON.stringify({base,origin,appOrigin,links,posts,categories,externalLinks:snapshot.externalLinks}));
+  await emit('shared.json',JSON.stringify({base,origin,appOrigin,links,posts,categories,externalLinks:snapshot.externalLinks,usefulLinks:snapshot.usefulLinks}));
   await emit('.nojekyll', '');
   const routes = ['/', '/posts/', '/about/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
   await emit('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(destination.origin + base + route)}</loc></url>`).join('')}</urlset>`);

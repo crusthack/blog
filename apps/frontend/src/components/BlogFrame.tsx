@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { readProblem, type Category, type PostSummary } from "@/lib/contracts";
 import { SidebarCategories } from "@/components/categories/SidebarCategories";
-import { usefulSiteLinks } from "@/lib/siteLinks";
+import { usefulLinksUpdatedEvent } from "@/lib/uiEvents";
+import { defaultUsefulLinks, type ExternalLink } from "@/lib/siteLinks";
 import { postPath } from "@/lib/postPaths";
 
 export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rightSidebar?: ReactNode }) {
@@ -16,6 +17,24 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
   const [posts, setPosts] = useState<PostSummary[]>(published?.posts ?? []);
   const [isLoading, setIsLoading] = useState(!published);
   const [error, setError] = useState("");
+  const [usefulLinks, setUsefulLinks] = useState<ExternalLink[]>(published?.usefulLinks ?? defaultUsefulLinks);
+  useEffect(() => {
+    if (published || rightSidebar !== undefined) return;
+    const controller = new AbortController();
+    const refresh = () => {
+      void fetchCollection<ExternalLink>("/api/site-settings/useful-links", "유용한 사이트를 불러오지 못했습니다.", controller.signal)
+        .then(setUsefulLinks)
+        .catch(reason => { if (!controller.signal.aborted) setError(String(reason)); });
+    };
+    refresh();
+    window.addEventListener(usefulLinksUpdatedEvent, refresh);
+    return () => {
+      controller.abort();
+      window.removeEventListener(usefulLinksUpdatedEvent, refresh);
+    };
+  }, [published, rightSidebar]);
+
+
 
   useEffect(() => {
     if (published || isAuthLoading) return;
@@ -118,8 +137,8 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
         <section>
           <h2>유용한 사이트</h2>
           <ul>
-            {usefulSiteLinks.map((link) => (
-              <li key={link.url}>
+            {usefulLinks.map((link, index) => (
+              <li key={index}>
                 <a
                   aria-label={`${link.name} (새 탭)`}
                   href={link.url}

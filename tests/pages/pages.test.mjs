@@ -20,6 +20,7 @@ function fixture() {
   const data = {
     '/api/categories': [category],
     '/api/site-settings/external-links': [],
+    '/api/site-settings/useful-links': [{ name: 'Docs', url: 'https://example.org' }],
     '/api/posts/directory?visibility=Public&sort=updated&direction=asc&page=1': { total: 1, page: 1, pageSize: 20, items: [post] },
     '/api/posts/7': post,
     '/api/posts/7/assets/downloads': [asset],
@@ -41,6 +42,8 @@ test('exports standalone HTML, copied attachments, project base paths and safe M
   assert.equal(result.latestPostUpdatedAtUtc, f.post.updatedAtUtc);
   const view = JSON.parse(await readFile(path.join(outputDirectory,'posts/network/7/view.json')));
   const shared = JSON.parse(await readFile(path.join(outputDirectory,'shared.json')));
+  assert.deepEqual(shared.usefulLinks, f.data['/api/site-settings/useful-links']);
+  assert.deepEqual(shared.externalLinks, []);
   assert.equal(view.post.content, f.post.content);
   assert.equal(shared.links['/about'], '/blog/about/');
   assert.equal(shared.links['/posts/7'], '/blog/posts/network/7/');

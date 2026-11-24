@@ -27,7 +27,7 @@ def snapshot(db, full):
     for query in ("SELECT p.*" + PUBLIC + " ORDER BY p.Id",
                   "SELECT * FROM Categories WHERE IsVisible=1 ORDER BY Id",
                   "SELECT * FROM PostAssets WHERE PostId IN (SELECT p.Id" + PUBLIC + ") ORDER BY Id",
-                  "SELECT Key,Value FROM SiteSettings WHERE Key IN ('page-home','page-about') ORDER BY Key"):
+                  "SELECT Key,Value FROM SiteSettings WHERE Key IN ('page-home','page-about','external-links','useful-links') ORDER BY Key"):
         for row in db.execute(query):
             digest.update(json.dumps(row).encode() + b"\n")
     # Include template and dependency changes following a code deployment.

@@ -1,4 +1,4 @@
-export const usefulSiteLinks = [
+const usefulSiteLinks = [
   { name: "Next.js 학습자료", url: "https://sangkon.com/practice-ts/" },
   { name: "C# 학습자료", url: "https://sangkon.com/practice-csharp/" },
   { name: ".NET Docs", url: "https://github.com/dotnet/docs" },
@@ -17,6 +17,10 @@ export type ExternalLink = {
   sortOrder: number;
   isVisible: boolean;
 };
+
+export const defaultUsefulLinks: ExternalLink[] = usefulSiteLinks.map(
+  (link, sortOrder) => ({ ...link, sortOrder, isVisible: true }),
+);
 
 const navigationLinkSources = [
   { name: "GitHub 저장소", url: "https://github.com/crusthack/blog" },
