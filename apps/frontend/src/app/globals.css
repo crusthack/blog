@@ -690,11 +690,11 @@ summary {
 .legacy-blog-frame {
   display: grid;
   grid-template-areas: "left main right";
-  grid-template-columns: minmax(10rem, 0.75fr) minmax(0, 62.5rem) minmax(11rem, 0.85fr);
-  width: min(100%, 100rem);
+  grid-template-columns: minmax(9rem, 0.8fr) minmax(0, 6fr) minmax(10rem, 0.9fr);
+  width: min(100%, 116rem);
   min-height: 75vh;
   align-items: start;
-  gap: clamp(1.25rem, 2.5vw, 2rem);
+  gap: clamp(1rem, 1.5vw, 1.75rem);
   margin-inline: auto;
   padding: 2rem clamp(1rem, 2vw, 2rem) 4rem;
 }
@@ -703,6 +703,10 @@ summary {
   grid-area: main;
   min-width: 0;
 }
+
+.sidebar-category-row { display: flex; align-items: center; justify-content: space-between; gap: .25rem; }
+.sidebar-category-row button { flex: none; min-width: 2rem; min-height: 2rem; cursor: pointer; color: var(--muted); }
+.legacy-blog-sidebar .sidebar-categories ul { padding-inline-start: .8rem; border-inline-start: 1px solid var(--border-soft); }
 
 .legacy-blog-sidebar-left {
   grid-area: left;

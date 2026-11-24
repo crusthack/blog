@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, type PostSummary, effectivePostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
-import { flattenCategories } from "@/lib/categoryTree";
+import { flattenCategories, groupCategories } from "@/lib/categoryTree";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { postPath } from "@/lib/postPaths";
 
@@ -55,7 +55,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
     async function load() {
       try {
         const [postResponse, categoryResponse] = await Promise.all([
-          fetch(`/api/posts/directory?${new URLSearchParams({ page: String(page), query: search, sort, direction, ...(categorySlug || categoryId ? { category: categorySlug || categoryId } : {}), ...(visibility ? { visibility } : {}), ...(mine ? { mine: "true" } : {}), ...(bookmarked ? { bookmarked: "true" } : {}) })}`, { cache: "no-store", credentials: "include", signal: controller.signal }),
+          fetch(`/api/posts/directory?${new URLSearchParams({ page: String(page), query: search, sort, direction, ...(categorySlug || categoryId ? { category: categorySlug || categoryId, ...(categorySlug ? { includeDescendants: "true" } : {}) } : {}), ...(visibility ? { visibility } : {}), ...(mine ? { mine: "true" } : {}), ...(bookmarked ? { bookmarked: "true" } : {}) })}`, { cache: "no-store", credentials: "include", signal: controller.signal }),
           fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal }),
         ]);
         if (!postResponse.ok) throw new Error(await readProblem(postResponse, "글 목록을 불러오지 못했습니다."));
@@ -89,7 +89,18 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   const parentCategory = activeCategory?.parentId && categories.find(category => category.id === activeCategory.parentId);
   const childCategories = activeCategory ? categories.filter(category => category.parentId === activeCategory.id) : [];
   const missingCategory = Boolean(categorySlug && !isLoading && !loadError && !activeCategory);
-  const matches = published?.posts.filter(p => (!(categorySlug || categoryId) || p.categorySlug === (categorySlug || categoryId)) &&
+  const subtree = new Set<string>();
+  if (published && activeCategory) {
+    const children = groupCategories(categories);
+    const pending = [activeCategory];
+    while (pending.length) {
+      const category = pending.pop()!;
+      if (subtree.has(category.slug)) continue;
+      subtree.add(category.slug);
+      pending.push(...(children.get(category.id) ?? []));
+    }
+  }
+  const matches = published?.posts.filter(p => (categorySlug ? subtree.has(p.categorySlug ?? "") : !categoryId || p.categorySlug === categoryId) &&
     (!search || (p.title + " " + (p.description ?? "")).toLowerCase().includes(search.toLowerCase()))).sort((a,b) => {
       const order = sort === "title" ? a.title.localeCompare(b.title, "ko") : sort === "priority" ? (a.priority ?? 0) - (b.priority ?? 0) :
         (sort === "updated" ? a.updatedAtUtc : a.createdAtUtc ?? "").localeCompare(sort === "updated" ? b.updatedAtUtc : b.createdAtUtc ?? "");

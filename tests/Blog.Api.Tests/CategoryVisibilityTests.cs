@@ -108,6 +108,9 @@ public sealed class CategoryVisibilityTests
         Assert.Empty((await owner.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.CodeProtected))!.Items);
         Assert.Empty((await visitor.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.Private))!.Items);
 
+        var subtreeDirectory = $"/api/posts/directory?visibility=Public&category={category.Slug}&includeDescendants=true";
+        Assert.Empty((await visitor.GetFromJsonAsync<DirectoryResult>(subtreeDirectory))!.Items);
+
         var batch = new[] { child.Id, leaf.Id, sibling.Id };
         Assert.Equal(HttpStatusCode.Unauthorized, await SetParents(visitor, batch, null));
         Assert.Equal(HttpStatusCode.BadRequest, await SetParents(owner, batch, leaf.Id));
@@ -135,6 +138,9 @@ public sealed class CategoryVisibilityTests
         var published = Assert.Single((await visitor.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.Public))!.Items);
         Assert.Equal(post.PostNumber, published.PostNumber);
         Assert.False(published.CategoryIsHidden);
+        var descendant = Assert.Single((await visitor.GetFromJsonAsync<DirectoryResult>(subtreeDirectory))!.Items);
+        Assert.Equal(post.PostNumber, descendant.PostNumber);
+        Assert.Empty((await visitor.GetFromJsonAsync<DirectoryResult>($"/api/posts/directory?category={category.Slug}"))!.Items);
         var codeProtected = Assert.Single((await visitor.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.CodeProtected))!.Items);
         Assert.Equal(protectedPost.PostNumber, codeProtected.PostNumber);
         Assert.False(codeProtected.CategoryIsHidden);

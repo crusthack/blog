@@ -23,6 +23,18 @@ public sealed class PostDirectoryController(BlogDbContext db) : ControllerBase
         if (request.Mine) query = query.Where(post => post.OwnerId == actor);
         if (request.Bookmarked) query = query.Where(post => db.PostBookmarks.Any(item => item.UserId == actor && item.PostId == post.Id));
         if (request.Category == "uncategorized") query = query.Where(post => post.CategoryId == null);
+        else if (request.IncludeDescendants && !string.IsNullOrEmpty(request.Category))
+        {
+            var ids = await db.Database.SqlQuery<Guid>($"""
+                WITH RECURSIVE subtree(Id) AS (
+                    SELECT Id FROM Categories WHERE Slug = {request.Category}
+                    UNION
+                    SELECT c.Id FROM Categories c JOIN subtree s ON c.ParentId = s.Id
+                )
+                SELECT Id AS Value FROM subtree
+                """).ToListAsync();
+            query = query.Where(post => post.CategoryId.HasValue && ids.Contains(post.CategoryId.Value));
+        }
         else if (!string.IsNullOrEmpty(request.Category)) query = query.Where(post => post.Category != null && post.Category.Slug == request.Category);
         if (!string.IsNullOrEmpty(request.Visibility))
             query = query.Where(post => (post.Category != null && !post.Category.IsVisible
@@ -82,6 +94,7 @@ public sealed class DirectoryRequest
     [RegularExpression("^(Public|Private|CodeProtected)$")] public string? Visibility { get; init; }
     [RegularExpression("^(priority|created|newest|oldest|updated|title)$")] public string Sort { get; init; } = "priority";
     [RegularExpression("^(asc|desc)$")] public string? Direction { get; init; }
+    public bool IncludeDescendants { get; init; }
     public bool Mine { get; init; }
     public bool Bookmarked { get; init; }
 }
