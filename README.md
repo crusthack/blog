@@ -30,6 +30,10 @@ Next.js Frontend와 ASP.NET Core Backend를 한 저장소에서 관리하는 모
 
 ## 구조
 
+매일 한국 시간 새벽 1시에 공개 콘텐츠의 변경 여부를 확인하고 변경 시에만
+GitHub Pages 정적 블로그를 갱신할 수 있습니다. 활성화와 동작 범위는
+[GitHub Pages 배포 안내](docs/GITHUB_PAGES.md)를 참고합니다.
+
 ```text
 apps/
   frontend/  Next.js

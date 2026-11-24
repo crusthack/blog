@@ -49,6 +49,7 @@ jobs:
       - run: npm ci
       - run: npm run lint:frontend
       - run: npm run test:frontend
+      - run: npm run test:pages
       - run: npm run build:frontend
         env:
           API_SERVER_URL: http://backend:8080

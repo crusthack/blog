@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish changed public blog content to GitHub Pages
+After=docker.service network-online.target
+[Service]
+EnvironmentFile=/etc/blog/pages.env
+ExecStart=/usr/bin/python3 /srv/blog/current/deploy/scripts/pages-watch.py
+Restart=always
+RestartSec=20
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target
