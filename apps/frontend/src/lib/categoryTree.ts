@@ -1,5 +1,10 @@
 import type { Category } from "./contracts";
 
+export function getHeaderShortcuts(categories: Category[]) {
+  return categories.filter(category => category.isHeaderShortcut)
+    .sort((left, right) => (left.headerShortcutOrder ?? 0) - (right.headerShortcutOrder ?? 0));
+}
+
 export function groupCategories(categories: Category[]) {
   const children = new Map<string | null, Category[]>();
   for (const category of categories) {

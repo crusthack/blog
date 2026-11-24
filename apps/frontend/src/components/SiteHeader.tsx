@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { Category } from "@/lib/contracts";
+import { getHeaderShortcuts } from "@/lib/categoryTree";
 import { navigationExternalLinks, type ExternalLink } from "@/lib/siteLinks";
 import { categoriesUpdatedEvent, externalLinksUpdatedEvent } from "@/lib/uiEvents";
 
@@ -15,8 +16,8 @@ export function SiteHeader() {
   const { user, isLoading, logout } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const topCategories = categories.filter(category => !category.parentId && category.isVisible);
-  const shortcutCategory = categories.find(category => category.isHeaderShortcut && category.isVisible);
-  const shortcutHref = shortcutCategory ? `/categories/${encodeURIComponent(shortcutCategory.slug)}` : null;
+  const shortcutCategories = getHeaderShortcuts(categories).filter(category => category.isVisible);
+  const hasShortcuts = shortcutCategories.length > 0;
   const [externalLinks, setExternalLinks] = useState<ExternalLink[]>(navigationExternalLinks);
   const externalMenuRef = useRef<HTMLDetailsElement>(null);
   const publicMenuRef = useRef<HTMLDetailsElement>(null);
@@ -127,12 +128,12 @@ export function SiteHeader() {
     <header className="print:hidden">
       <nav
         aria-label="주요 메뉴"
-        className={`site-nav w-full border-b border-gray-200 bg-gray-50 transition-colors dark:border-gray-800 dark:bg-[#292929] ${shortcutCategory ? "lg:h-16" : "h-16"}`}
+        className={`site-nav w-full border-b border-gray-200 bg-gray-50 transition-colors dark:border-gray-800 dark:bg-[#292929] ${hasShortcuts ? "lg:h-16" : "h-16"}`}
       >
-        <div className={`mx-auto w-full max-w-[1200px] items-center px-2 sm:px-6 ${shortcutCategory
+        <div className={`mx-auto w-full max-w-[1200px] items-center px-2 sm:px-6 ${hasShortcuts
           ? "grid grid-cols-[auto_minmax(0,1fr)] lg:h-full lg:grid-cols-[minmax(0,1fr)_auto]"
           : "flex h-full justify-between"}`}>
-          <div className={`flex min-w-0 items-center gap-0 ${shortcutCategory ? "max-lg:self-start max-lg:pt-2" : ""}`}>
+          <div className={`flex min-w-0 items-center gap-0 ${hasShortcuts ? "max-lg:self-start max-lg:pt-2" : ""}`}>
             <Link
               aria-label="메인 페이지"
               className="site-nav-primary-link flex shrink-0 items-center whitespace-nowrap p-1 pr-1 text-xl font-black tracking-tight"
@@ -191,7 +192,7 @@ export function SiteHeader() {
             </details>
           </div>
 
-          <div className={`flex items-center gap-1 sm:gap-2 ${shortcutCategory ? "min-w-0 justify-end max-lg:flex-wrap max-lg:py-2" : "shrink-0"}`}>
+          <div className={`flex items-center gap-1 sm:gap-2 ${hasShortcuts ? "min-w-0 justify-end max-lg:flex-wrap max-lg:py-2" : "shrink-0"}`}>
             <ThemeToggle />
             <details
               className="group/public-menu relative lg:hidden"
@@ -232,7 +233,7 @@ export function SiteHeader() {
                 <ExternalSiteLinks links={externalLinks} onNavigate={closeMenus} />
               </div>
             </details>
-            <div className={`flex min-w-0 items-center gap-1 sm:gap-2 ${shortcutCategory ? "max-lg:order-last max-lg:basis-full max-lg:justify-end" : ""}`}>
+            <div className={`flex min-w-0 items-center gap-1 sm:gap-2 ${hasShortcuts ? "max-lg:order-last max-lg:basis-full max-lg:justify-end" : ""}`}>
               <Link
                 className="site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold transition sm:px-3"
                 href="/about"
@@ -240,16 +241,25 @@ export function SiteHeader() {
               >
                 개발자소개
               </Link>
-              {shortcutCategory && shortcutHref && (
-                <Link
-                  aria-current={pathname === shortcutHref ? "page" : undefined}
-                  className="site-nav-link flex min-w-0 max-w-40 items-center whitespace-nowrap px-2 py-2 font-bold transition sm:px-3 lg:max-w-32 xl:max-w-40"
-                  href={shortcutHref}
-                  onClick={closeMenus}
-                  title={shortcutCategory.name}
-                >
-                  <span className="truncate">{shortcutCategory.name}</span>
-                </Link>
+              {hasShortcuts && (
+                <div role="group" aria-label="카테고리 바로가기"
+                  className="flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:thin] sm:gap-2 lg:max-w-36 xl:max-w-64">
+                  {shortcutCategories.map(category => {
+                    const href = `/categories/${encodeURIComponent(category.slug)}`;
+                    return (
+                      <Link
+                        aria-current={pathname === href ? "page" : undefined}
+                        className="site-nav-link flex max-w-40 shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold transition focus-visible:outline-offset-[-2px] sm:px-3 lg:max-w-32 xl:max-w-40"
+                        href={href}
+                        key={category.id}
+                        onClick={closeMenus}
+                        title={category.name}
+                      >
+                        <span className="truncate">{category.name}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
               <details
                 className="group/categories relative shrink-0"
@@ -320,7 +330,7 @@ export function SiteHeader() {
                 }}
                 ref={ownerMenuRef}
               >
-                <summary className={`flex max-w-24 cursor-pointer list-none items-center gap-1 bg-emerald-600 px-2 py-2 font-bold text-white transition hover:bg-emerald-700 sm:px-3 ${shortcutCategory ? "max-[440px]:max-w-16 xl:max-w-40" : "sm:max-w-40"}`}>
+                <summary className={`flex max-w-24 cursor-pointer list-none items-center gap-1 bg-emerald-600 px-2 py-2 font-bold text-white transition hover:bg-emerald-700 sm:px-3 ${hasShortcuts ? "max-[440px]:max-w-16 xl:max-w-40" : "sm:max-w-40"}`}>
                   <span className="truncate">{user.username}</span>
                   <span
                     aria-hidden="true"

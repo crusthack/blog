@@ -24,6 +24,7 @@ export type Category = {
   isVisible: boolean;
   postCount: number;
   isHeaderShortcut: boolean;
+  headerShortcutOrder?: number | null;
   parentId?: string | null;
   isLocallyVisible?: boolean;
 };

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Blog.Api.Auth;
 using Blog.Api.Data;
@@ -22,7 +23,7 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
     public async Task<ActionResult<IReadOnlyList<CategoryResponse>>> GetCategories(CancellationToken cancellationToken)
     {
         var canManage = User.IsInRole(Roles.Owner);
-        var headerCategoryId = await ReadHeaderCategoryId(cancellationToken);
+        var shortcutOrders = await ReadHeaderShortcutOrders(cancellationToken);
         var query = db.Categories.AsNoTracking();
         if (!canManage)
             query = query.Where(category => category.IsVisible);
@@ -39,29 +40,48 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
                 category.IsVisible,
                 category.Posts.Count(post => canManage ||
                     post.Visibility == PostVisibility.Public || post.Visibility == PostVisibility.CodeProtected),
-                category.Id == headerCategoryId,
+                false,
                 category.ParentId,
                 category.IsLocallyVisible))
             .ToListAsync(cancellationToken);
 
-        return Ok(categories);
+        return Ok(categories.Select(category => shortcutOrders.TryGetValue(category.Id, out var order)
+            ? category with { IsHeaderShortcut = true, HeaderShortcutOrder = order }
+            : category));
     }
 
     [Authorize(Roles = Roles.Owner)]
     [HttpPut("header-shortcut")]
-    public async Task<IActionResult> SetHeaderShortcut(SetHeaderCategoryRequest request, CancellationToken cancellationToken)
+    public Task<IActionResult> SetHeaderShortcut(SetHeaderCategoryRequest request, CancellationToken cancellationToken) =>
+        SaveHeaderShortcuts(request.CategoryId is Guid id ? [id] : [], false, cancellationToken);
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpPut("header-shortcuts")]
+    public Task<IActionResult> SetHeaderShortcuts(SetHeaderCategoriesRequest request, CancellationToken cancellationToken) =>
+        SaveHeaderShortcuts(request.CategoryIds.Distinct().ToArray(), true, cancellationToken);
+
+    private async Task<IActionResult> SaveHeaderShortcuts(Guid[] ids, bool keepHidden, CancellationToken cancellationToken)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        if (request.CategoryId is Guid categoryId &&
-            !await db.Categories.AnyAsync(category => category.Id == categoryId && category.IsVisible, cancellationToken))
+        var setting = await db.SiteSettings.SingleOrDefaultAsync(
+            item => item.Key == SiteSettingKeys.HeaderCategory, cancellationToken);
+        var existingIds = keepHidden ? ParseHeaderCategoryIds(setting?.Value) : [];
+        var validCount = await db.Categories.CountAsync(category => ids.Contains(category.Id)
+            && (category.IsVisible || existingIds.Contains(category.Id)), cancellationToken);
+        if (validCount != ids.Length)
         {
             return BadRequest(new ProblemDetails { Title = "공개 카테고리를 선택해 주세요." });
         }
 
-        var setting = await db.SiteSettings.SingleOrDefaultAsync(
-            item => item.Key == SiteSettingKeys.HeaderCategory, cancellationToken);
+        WriteHeaderShortcuts(setting, ids);
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return NoContent();
+    }
 
-        if (request.CategoryId is null)
+    private void WriteHeaderShortcuts(SiteSetting? setting, Guid[] ids)
+    {
+        if (ids.Length == 0)
         {
             if (setting is not null) db.SiteSettings.Remove(setting);
         }
@@ -70,18 +90,14 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
             db.SiteSettings.Add(new SiteSetting
             {
                 Key = SiteSettingKeys.HeaderCategory,
-                Value = request.CategoryId.Value.ToString(),
+                Value = JsonSerializer.Serialize(ids),
             });
         }
         else
         {
-            setting.Value = request.CategoryId.Value.ToString();
+            setting.Value = JsonSerializer.Serialize(ids);
             setting.UpdatedAtUtc = DateTime.UtcNow;
         }
-
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return NoContent();
     }
 
     [Authorize(Roles = Roles.Owner)]
@@ -142,10 +158,10 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         category.IsLocallyVisible = request.IsVisible;
         MoveCategories([category], request.ParentId, tree);
         var postCount = await db.Posts.CountAsync(post => post.CategoryId == id);
-        var headerCategoryId = await ReadHeaderCategoryId();
+        var shortcutOrders = await ReadHeaderShortcutOrders();
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
-        return Ok(ToResponse(category, postCount, category.Id == headerCategoryId));
+        return Ok(ToResponse(category, postCount, shortcutOrders.TryGetValue(id, out var order) ? order : null));
     }
 
     [Authorize(Roles = Roles.Owner)]
@@ -203,8 +219,10 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         }
 
         var shortcut = await db.SiteSettings.SingleOrDefaultAsync(setting => setting.Key == SiteSettingKeys.HeaderCategory);
-        if (shortcut is not null && Guid.TryParse(shortcut.Value, out var pinnedId) && subtreeIds.Contains(pinnedId))
-            db.SiteSettings.Remove(shortcut);
+        var shortcutIds = ParseHeaderCategoryIds(shortcut?.Value);
+        var remainingShortcuts = shortcutIds.Where(categoryId => !subtreeIds.Contains(categoryId)).ToArray();
+        if (remainingShortcuts.Length != shortcutIds.Length)
+            WriteHeaderShortcuts(shortcut, remainingShortcuts);
 
         subtree.Reverse();
         db.Categories.RemoveRange(subtree);
@@ -266,17 +284,32 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 
     private static string NormalizeSlug(string value) => value.Trim().ToLowerInvariant();
     private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    private static CategoryResponse ToResponse(Category category, int postCount, bool isHeaderShortcut = false) => new(
+    private static CategoryResponse ToResponse(Category category, int postCount, int? shortcutOrder = null) => new(
         category.Id, category.Name, category.Slug, category.Description,
-        category.SortOrder, category.IsVisible, postCount, isHeaderShortcut, category.ParentId, category.IsLocallyVisible);
+        category.SortOrder, category.IsVisible, postCount, shortcutOrder.HasValue, category.ParentId, category.IsLocallyVisible, shortcutOrder);
 
-    private async Task<Guid?> ReadHeaderCategoryId(CancellationToken cancellationToken = default)
+    private async Task<Dictionary<Guid, int>> ReadHeaderShortcutOrders(CancellationToken cancellationToken = default)
     {
         var value = await db.SiteSettings
             .Where(item => item.Key == SiteSettingKeys.HeaderCategory)
             .Select(item => item.Value)
             .SingleOrDefaultAsync(cancellationToken);
-        return Guid.TryParse(value, out var id) ? id : null;
+        return ParseHeaderCategoryIds(value).Select((id, index) => (id, index))
+            .ToDictionary(item => item.id, item => item.index);
+    }
+
+    private static Guid[] ParseHeaderCategoryIds(string? value)
+    {
+        if (value is null) return [];
+        if (Guid.TryParse(value, out var id)) return [id];
+        try
+        {
+            return JsonSerializer.Deserialize<Guid[]>(value)?.Distinct().ToArray() ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$")]
@@ -286,6 +319,12 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 public sealed class SetHeaderCategoryRequest
 {
     public required Guid? CategoryId { get; init; }
+}
+
+public sealed class SetHeaderCategoriesRequest
+{
+    [Required]
+    public required Guid[] CategoryIds { get; init; }
 }
 
 public sealed class SetCategoryParentRequest
@@ -328,4 +367,5 @@ public sealed record CategoryResponse(
     int PostCount,
     bool IsHeaderShortcut = false,
     Guid? ParentId = null,
-    bool IsLocallyVisible = true);
+    bool IsLocallyVisible = true,
+    int? HeaderShortcutOrder = null);

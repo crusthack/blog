@@ -2,8 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Blog.Api.Controllers;
+using Blog.Api.Data;
+using Blog.Api.Models;
 using Blog.Api.Setup;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Blog.Api.Tests;
 
@@ -218,6 +221,60 @@ public sealed class SiteSettingsAndHealthTests
             CategoryId = null,
         })).StatusCode);
         Assert.False(Assert.Single((await visitor.GetFromJsonAsync<CategoryResponse[]>(categories))!).IsHeaderShortcut);
+    }
+
+    [Fact]
+    public async Task Header_shortcuts_keep_order_visibility_and_legacy_settings()
+    {
+        using var factory = new SetupApiFactory();
+        using var owner = factory.CreateClient(ClientOptions());
+        using var visitor = factory.CreateClient(ClientOptions());
+        await CreateAndLoginOwnerAsync(owner, "multi-shortcuts-owner");
+
+        const string categories = "/api/categories";
+        const string endpoint = categories + "/header-shortcuts";
+        async Task<CategoryResponse> CreateCategory(string slug)
+        {
+            var response = await owner.PostAsJsonAsync(categories, new SaveCategoryRequest { Name = slug, Slug = slug });
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            return Assert.IsType<CategoryResponse>(await response.Content.ReadFromJsonAsync<CategoryResponse>());
+        }
+        async Task<Guid[]> ReadShortcuts(HttpClient client)
+        {
+            var list = await client.GetFromJsonAsync<CategoryResponse[]>(categories);
+            return list!.Where(item => item.IsHeaderShortcut).OrderBy(item => item.HeaderShortcutOrder).Select(item => item.Id).ToArray();
+        }
+
+        var first = await CreateCategory("alpha");
+        var second = await CreateCategory("beta");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BlogDbContext>();
+            db.SiteSettings.Add(new SiteSetting { Key = SiteSettingKeys.HeaderCategory, Value = first.Id.ToString() });
+            await db.SaveChangesAsync();
+        }
+        Assert.Equal([first.Id], await ReadShortcuts(visitor));
+
+        var save = new SetHeaderCategoriesRequest { CategoryIds = [second.Id, first.Id, second.Id] };
+        Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.PutAsJsonAsync(endpoint, save)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync(endpoint, save)).StatusCode);
+        Assert.Equal([second.Id, first.Id], await ReadShortcuts(visitor));
+
+        var firstPath = $"{categories}/{first.Id}";
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync(firstPath, new SaveCategoryRequest
+        {
+            Name = first.Name,
+            Slug = first.Slug,
+            IsVisible = false,
+        })).StatusCode);
+        Assert.Equal([second.Id], await ReadShortcuts(visitor));
+        Assert.Equal([second.Id, first.Id], await ReadShortcuts(owner));
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync(endpoint, new SetHeaderCategoriesRequest
+        {
+            CategoryIds = [first.Id, second.Id],
+        })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"{categories}/{second.Id}")).StatusCode);
+        Assert.Equal([first.Id], await ReadShortcuts(owner));
     }
 
     private static WebApplicationFactoryClientOptions ClientOptions() => new()

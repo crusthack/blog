@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, readProblem } from "@/lib/contracts";
-import { canUseCategoryParent, flattenCategories, groupCategories } from "@/lib/categoryTree";
+import { canUseCategoryParent, flattenCategories, getHeaderShortcuts, groupCategories } from "@/lib/categoryTree";
 import { CategoryTree } from "./CategoryTree";
 import { CategoryDiagram } from "./CategoryDiagram";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
@@ -31,7 +32,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null);
-  const [shortcutDraft, setShortcutDraft] = useState<string | null>(null);
+  const [shortcutDraft, setShortcutDraft] = useState<string[] | null>(null);
   const [isSavingShortcut, setIsSavingShortcut] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -49,12 +50,23 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const draggedSelection = draggedId ? selectedIds.has(draggedId) ? selection : [draggedId] : [];
   const busy = isMoving || busyCategoryId !== null;
   const moveTargetIsValid = moveTarget !== null && canMoveTo(selection, moveTarget || null);
-  const savedShortcut = categories.find(category => category.isHeaderShortcut);
-  const visibleCategories = categories.filter(category => category.isVisible);
-  const selectedShortcutId = shortcutDraft === ""
-    ? ""
-    : visibleCategories.find(category => category.id === shortcutDraft)?.id ?? savedShortcut?.id ?? "";
-  const shortcutChanged = selectedShortcutId !== (savedShortcut?.id ?? "");
+  const savedShortcutIds = getHeaderShortcuts(categories).map(category => category.id);
+  const shortcutIds = shortcutDraft?.filter(id => categoriesById.has(id)) ?? savedShortcutIds;
+  const shortcutIdsSet = new Set(shortcutIds);
+  const shortcutChanged = shortcutIds.length !== savedShortcutIds.length
+    || shortcutIds.some((id, index) => id !== savedShortcutIds[index]);
+
+  function editShortcuts(ids: string[]) {
+    setShortcutDraft(ids);
+    setMessage("");
+  }
+
+  function reorderShortcut(index: number, direction: -1 | 1) {
+    const next = [...shortcutIds];
+    const target = index + direction;
+    [next[index], next[target]] = [next[target], next[index]];
+    editShortcuts(next);
+  }
 
   const load = useCallback(async () => {
     const response = await fetch("/api/categories", { cache: "no-store", credentials: "include" });
@@ -208,20 +220,22 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     setError("");
     setMessage("");
     try {
-      const response = await fetch("/api/categories/header-shortcut", {
+      const response = await fetch("/api/categories/header-shortcuts", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categoryId: selectedShortcutId || null }),
+        body: JSON.stringify({ categoryIds: shortcutIds }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "상단 바로가기를 저장하지 못했습니다."));
+      const orders = new Map(shortcutIds.map((id, order) => [id, order]));
       setCategories(current => current.map(category => ({
         ...category,
-        isHeaderShortcut: category.id === selectedShortcutId,
+        isHeaderShortcut: orders.has(category.id),
+        headerShortcutOrder: orders.get(category.id) ?? null,
       })));
       setShortcutDraft(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
-      setMessage(selectedShortcutId ? "상단 카테고리 바로가기를 저장했습니다." : "상단 카테고리 바로가기를 해제했습니다.");
+      setMessage("상단 카테고리 바로가기를 저장했습니다.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "상단 바로가기를 저장하지 못했습니다.");
     } finally {
@@ -326,7 +340,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           </p>
         ) : null}
       </div>
-      <CategoryDiagram branches={branches} />
       <section data-ui="panel" className="category-tree-panel mb-6 bg-white p-4 sm:p-6 dark:bg-[#252525]">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-2xl font-black">카테고리 목록</h2>
@@ -438,7 +451,15 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
                       aria-label={`${category.name} 선택`} onChange={() => toggleSelection(category.id)} />
                     {disclosure}
                     <span aria-hidden="true" className="cursor-grab text-gray-500">⠿</span>
-                    <strong className="wrap-break-word text-base">{category.name}</strong>
+                    <strong className="wrap-break-word text-base">
+                      <Link
+                        className="underline decoration-[var(--border-soft)] underline-offset-2 transition hover:decoration-current focus-visible:decoration-current"
+                        draggable={false}
+                        href={`/categories/${encodeURIComponent(category.slug)}`}
+                      >
+                        {category.name}
+                      </Link>
+                    </strong>
                     <span className="font-mono text-xs text-gray-500 dark:text-gray-400">/{category.slug}</span>
                     <span className={`text-xs font-bold ${category.isVisible ? "text-emerald-600" : "text-amber-600"}`}>
                       {category.isVisible ? "공개" : category.isLocallyVisible ? "상위 카테고리 숨김" : "숨김"}
@@ -515,23 +536,39 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         <form data-ui="panel" className="bg-white p-6 dark:bg-[#252525]" onSubmit={saveHeaderShortcut}>
           <h2 className="text-2xl font-black">상단 카테고리 바로가기</h2>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-            공개 카테고리 하나를 선택하면 방문자에게 블로그 우측 상단에 바로가기 링크가 표시됩니다.
+            공개 카테고리를 추가하면 설정한 순서대로 블로그 상단에 표시됩니다.
           </p>
+          <ol className="mt-4 space-y-2">
+            {shortcutIds.map((id, index) => {
+              const category = categoriesById.get(id);
+              if (!category) return null;
+              return (
+                <li data-ui="row" key={id} className="flex flex-wrap items-center justify-between gap-2 border p-2">
+                  <span className="min-w-0 wrap-anywhere font-semibold">{category.name}{!category.isVisible && " (숨김)"}</span>
+                  <div className="flex flex-wrap gap-1">
+                    <button className={neutralButton} type="button" aria-label={`${category.name} 위로 이동`}
+                      disabled={isSavingShortcut || index === 0} onClick={() => reorderShortcut(index, -1)}>↑</button>
+                    <button className={neutralButton} type="button" aria-label={`${category.name} 아래로 이동`}
+                      disabled={isSavingShortcut || index === shortcutIds.length - 1} onClick={() => reorderShortcut(index, 1)}>↓</button>
+                    <button className={neutralButton} type="button" aria-label={`${category.name} 바로가기 제거`}
+                      disabled={isSavingShortcut} onClick={() => editShortcuts(shortcutIds.filter(item => item !== id))}>제거</button>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <label className="block min-w-0 flex-1 sm:max-w-sm">
-              <span className="mb-1 block text-sm font-bold">바로가기 카테고리</span>
+              <span className="mb-1 block text-sm font-bold">바로가기 추가</span>
               <select
                 data-ui="input"
                 className="w-full px-3 py-2"
                 disabled={isSavingShortcut}
-                onChange={event => { setShortcutDraft(event.target.value); setMessage(""); }}
-                value={selectedShortcutId}
+                onChange={event => editShortcuts([...shortcutIds, event.target.value])}
+                value=""
               >
-                <option value="">표시 안 함</option>
-                {savedShortcut && !savedShortcut.isVisible && (
-                  <option value={savedShortcut.id} disabled>{savedShortcut.name} (비공개)</option>
-                )}
-                {tree.filter(({ category }) => category.isVisible).map(({ category, depth }) => (
+                <option value="" disabled>카테고리 선택</option>
+                {tree.filter(({ category }) => category.isVisible && !shortcutIdsSet.has(category.id)).map(({ category, depth }) => (
                   <option key={category.id} value={category.id}>{"— ".repeat(Math.min(depth, 6))}{category.name}</option>
                 ))}
               </select>
@@ -542,6 +579,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           </div>
         </form>
       </div>
+      <CategoryDiagram branches={branches} />
     </Container>
   );
 }
