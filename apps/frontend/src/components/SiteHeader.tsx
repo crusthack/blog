@@ -130,9 +130,9 @@ export function SiteHeader() {
         className={`site-nav w-full border-b border-gray-200 bg-gray-50 transition-colors dark:border-gray-800 dark:bg-[#292929] ${shortcutCategory ? "lg:h-16" : "h-16"}`}
       >
         <div className={`mx-auto w-full max-w-[1200px] items-center px-2 sm:px-6 ${shortcutCategory
-          ? "grid grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(4rem,auto)_auto] lg:h-full lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:grid-rows-1"
+          ? "grid grid-cols-[auto_minmax(0,1fr)] lg:h-full lg:grid-cols-[minmax(0,1fr)_auto]"
           : "flex h-full justify-between"}`}>
-          <div className="flex min-w-0 items-center gap-0">
+          <div className={`flex min-w-0 items-center gap-0 ${shortcutCategory ? "max-lg:self-start max-lg:pt-2" : ""}`}>
             <Link
               aria-label="메인 페이지"
               className="site-nav-primary-link flex shrink-0 items-center whitespace-nowrap p-1 pr-1 text-xl font-black tracking-tight"
@@ -191,7 +191,7 @@ export function SiteHeader() {
             </details>
           </div>
 
-          <div className={`flex shrink-0 items-center gap-1 sm:gap-2 ${shortcutCategory ? "col-start-2 row-start-1 max-[350px]:gap-0 max-[350px]:[&>details>summary]:px-1" : ""}`}>
+          <div className={`flex items-center gap-1 sm:gap-2 ${shortcutCategory ? "min-w-0 justify-end max-lg:flex-wrap max-lg:py-2" : "shrink-0"}`}>
             <ThemeToggle />
             <details
               className="group/public-menu relative lg:hidden"
@@ -228,65 +228,73 @@ export function SiteHeader() {
                 >
                   웹게임
                 </Link>
-                {shortcutCategory && (
-                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold md:hidden" href="/about" onClick={closeMenus}>
-                    개발자소개
-                  </Link>
-                )}
                 <div aria-hidden="true" className="my-1 border-t border-gray-200 dark:border-gray-700" />
                 <ExternalSiteLinks links={externalLinks} onNavigate={closeMenus} />
               </div>
             </details>
-            <Link
-              className={`site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold sm:px-3 ${shortcutCategory ? "max-md:hidden" : ""}`}
-              href="/about"
-              onClick={closeMenus}
-            >
-              개발자소개
-            </Link>
-            <details
-              className="group/categories relative"
-              onToggle={(event) => {
-                if (event.currentTarget.open) {
-                  externalMenuRef.current?.removeAttribute("open");
-                  publicMenuRef.current?.removeAttribute("open");
-                  ownerMenuRef.current?.removeAttribute("open");
-                }
-              }}
-              ref={categoriesMenuRef}
-            >
-              <summary className="site-nav-link flex cursor-pointer list-none items-center gap-1 px-2 py-2 font-bold transition sm:px-3">
-                <span className="sm:hidden">분류</span>
-                <span className="hidden sm:inline">카테고리</span>
-                <span
-                  aria-hidden="true"
-                  className="text-xs transition-transform group-open/categories:rotate-180"
+            <div className={`flex min-w-0 items-center gap-1 sm:gap-2 ${shortcutCategory ? "max-lg:order-last max-lg:basis-full max-lg:justify-end" : ""}`}>
+              <Link
+                className="site-nav-link flex shrink-0 items-center whitespace-nowrap px-2 py-2 font-bold transition sm:px-3"
+                href="/about"
+                onClick={closeMenus}
+              >
+                개발자소개
+              </Link>
+              {shortcutCategory && shortcutHref && (
+                <Link
+                  aria-current={pathname === shortcutHref ? "page" : undefined}
+                  className="site-nav-link flex min-w-0 max-w-40 items-center whitespace-nowrap px-2 py-2 font-bold transition sm:px-3 lg:max-w-32 xl:max-w-40"
+                  href={shortcutHref}
+                  onClick={closeMenus}
+                  title={shortcutCategory.name}
                 >
-                  ▼
-                </span>
-              </summary>
-              <div className="site-nav-dropdown absolute right-0 z-50 mt-2 w-52 overflow-hidden border py-2">
-                <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold" href="/posts" onClick={closeMenus}>
-                  전체 글
+                  <span className="truncate">{shortcutCategory.name}</span>
                 </Link>
-                {topCategories.length > 0 ? (
-                  topCategories.map((category) => (
-                    <Link
-                      className="site-nav-dropdown-link flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-bold transition"
-                      href={`/categories/${encodeURIComponent(category.slug)}`}
-                      key={category.id}
-                      onClick={closeMenus}
-                    >
-                      <span className="truncate">{category.name}</span>
-                    </Link>
-                  ))
-                ) : (
-                  <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
-                    표시할 카테고리가 없습니다.
-                  </p>
-                )}
-              </div>
-            </details>
+              )}
+              <details
+                className="group/categories relative shrink-0"
+                onToggle={(event) => {
+                  if (event.currentTarget.open) {
+                    externalMenuRef.current?.removeAttribute("open");
+                    publicMenuRef.current?.removeAttribute("open");
+                    ownerMenuRef.current?.removeAttribute("open");
+                  }
+                }}
+                ref={categoriesMenuRef}
+              >
+                <summary className="site-nav-link flex cursor-pointer list-none items-center gap-1 px-2 py-2 font-bold transition sm:px-3">
+                  <span className="sm:hidden">분류</span>
+                  <span className="hidden sm:inline">카테고리</span>
+                  <span
+                    aria-hidden="true"
+                    className="text-xs transition-transform group-open/categories:rotate-180"
+                  >
+                    ▼
+                  </span>
+                </summary>
+                <div className="site-nav-dropdown absolute right-0 z-50 mt-2 w-52 overflow-hidden border py-2">
+                  <Link className="site-nav-dropdown-link block px-4 py-2.5 text-sm font-bold" href="/posts" onClick={closeMenus}>
+                    전체 글
+                  </Link>
+                  {topCategories.length > 0 ? (
+                    topCategories.map((category) => (
+                      <Link
+                        className="site-nav-dropdown-link flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-bold transition"
+                        href={`/categories/${encodeURIComponent(category.slug)}`}
+                        key={category.id}
+                        onClick={closeMenus}
+                      >
+                        <span className="truncate">{category.name}</span>
+                      </Link>
+                    ))
+                  ) : (
+                    <p className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">
+                      표시할 카테고리가 없습니다.
+                    </p>
+                  )}
+                </div>
+              </details>
+            </div>
 
             {user ? (
               <>
@@ -350,17 +358,6 @@ export function SiteHeader() {
               </Link>
             )}
           </div>
-          {shortcutCategory && shortcutHref && (
-            <Link
-              aria-current={pathname === shortcutHref ? "page" : undefined}
-              className="site-nav-link col-span-2 row-start-2 mb-1.5 max-w-full truncate justify-self-end border border-emerald-600/50 px-2.5 py-1.5 text-sm font-bold text-emerald-800 aria-[current=page]:bg-emerald-500/15 lg:col-span-1 lg:col-start-3 lg:row-start-1 lg:mb-0 lg:ml-2 lg:max-w-32 xl:max-w-40 dark:text-emerald-300"
-              href={shortcutHref}
-              onClick={closeMenus}
-              title={shortcutCategory.name}
-            >
-              {shortcutCategory.name}
-            </Link>
-          )}
         </div>
       </nav>
     </header>

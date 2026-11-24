@@ -1,6 +1,6 @@
 import type { Category } from "./contracts";
 
-export function flattenCategories(categories: Category[]) {
+export function groupCategories(categories: Category[]) {
   const children = new Map<string | null, Category[]>();
   for (const category of categories) {
     const parentId = category.parentId ?? null;
@@ -8,7 +8,11 @@ export function flattenCategories(categories: Category[]) {
     siblings.push(category);
     children.set(parentId, siblings);
   }
+  return children;
+}
 
+export function flattenCategories(categories: Category[]) {
+  const children = groupCategories(categories);
   const rows: { category: Category; depth: number }[] = [];
   function append(parentId: string | null, depth: number) {
     for (const category of children.get(parentId) ?? []) {

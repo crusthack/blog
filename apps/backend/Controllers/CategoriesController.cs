@@ -139,7 +139,7 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         category.Description = Normalize(request.Description);
         category.SortOrder = request.SortOrder;
         category.IsLocallyVisible = request.IsVisible;
-        MoveCategory(category, request.ParentId, tree);
+        MoveCategories([category], request.ParentId, tree);
         var postCount = await db.Posts.CountAsync(post => post.CategoryId == id);
         var headerCategoryId = await ReadHeaderCategoryId();
         await db.SaveChangesAsync();
@@ -149,13 +149,27 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
 
     [Authorize(Roles = Roles.Owner)]
     [HttpPut("{id:guid}/parent")]
-    public async Task<IActionResult> SetParent(Guid id, SetCategoryParentRequest request)
+    public Task<IActionResult> SetParent(Guid id, SetCategoryParentRequest request) =>
+        SetParents([id], request.ParentId);
+
+    [Authorize(Roles = Roles.Owner)]
+    [HttpPut("parents")]
+    public Task<IActionResult> SetParents(SetCategoryParentsRequest request) =>
+        SetParents(request.CategoryIds, request.ParentId);
+
+    private async Task<IActionResult> SetParents(IEnumerable<Guid> categoryIds, Guid? parentId)
     {
         await using var transaction = await db.Database.BeginTransactionAsync();
         var tree = await db.Categories.ToDictionaryAsync(item => item.Id);
-        if (!tree.TryGetValue(id, out var category)) return NotFound();
-        if (!IsValidParent(id, request.ParentId, tree)) return InvalidParent();
-        MoveCategory(category, request.ParentId, tree);
+        var selected = categoryIds.ToHashSet();
+        if (selected.Any(id => !tree.ContainsKey(id)))
+            return NotFound(new ProblemDetails { Title = "이동할 카테고리 중 일부를 찾을 수 없습니다." });
+        if (selected.Any(id => !IsValidParent(id, parentId, tree))) return InvalidParent();
+
+        var roots = selected.Select(id => tree[id])
+            .Where(category => !HasSelectedAncestor(category, selected, tree))
+            .ToArray();
+        MoveCategories(roots, parentId, tree);
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
         return NoContent();
@@ -194,16 +208,30 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
         return true;
     }
 
-    private static void MoveCategory(Category category, Guid? parentId, IReadOnlyDictionary<Guid, Category> tree)
+    private static bool HasSelectedAncestor(
+        Category category, IReadOnlySet<Guid> selected, IReadOnlyDictionary<Guid, Category> tree)
     {
-        category.ParentId = parentId;
-        category.IsVisible = category.IsLocallyVisible && (parentId is null || tree[parentId.Value].IsVisible);
+        for (var parentId = category.ParentId; parentId is Guid id; parentId = tree[id].ParentId)
+        {
+            if (selected.Contains(id)) return true;
+        }
+        return false;
+    }
+
+    private static void MoveCategories(
+        IReadOnlyCollection<Category> categories, Guid? parentId, IReadOnlyDictionary<Guid, Category> tree)
+    {
+        var parentVisible = parentId is null || tree[parentId.Value].IsVisible;
         var now = DateTime.UtcNow;
-        category.UpdatedAtUtc = now;
+        foreach (var category in categories)
+        {
+            category.ParentId = parentId;
+            category.IsVisible = category.IsLocallyVisible && parentVisible;
+            category.UpdatedAtUtc = now;
+        }
 
         var children = tree.Values.ToLookup(item => item.ParentId);
-        var queue = new Queue<Category>();
-        queue.Enqueue(category);
+        var queue = new Queue<Category>(categories);
         while (queue.TryDequeue(out var parent))
         {
             foreach (var child in children[parent.Id])
@@ -246,6 +274,13 @@ public sealed class SetHeaderCategoryRequest
 
 public sealed class SetCategoryParentRequest
 {
+    public required Guid? ParentId { get; init; }
+}
+
+public sealed class SetCategoryParentsRequest
+{
+    [Required, MinLength(1)]
+    public required Guid[] CategoryIds { get; init; }
     public required Guid? ParentId { get; init; }
 }
 

@@ -1,10 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, type DragEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, readProblem } from "@/lib/contracts";
-import { canUseCategoryParent, flattenCategories } from "@/lib/categoryTree";
+import { canUseCategoryParent, flattenCategories, groupCategories } from "@/lib/categoryTree";
+import { CategoryTree } from "./CategoryTree";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 
 type CategoryDraft = Pick<
@@ -33,9 +34,20 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const [isSavingShortcut, setIsSavingShortcut] = useState(false);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [moveTarget, setMoveTarget] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
+  const createForm = useRef<HTMLFormElement>(null);
   const tree = flattenCategories(categories);
+  const branches = groupCategories(categories);
+  const rootCount = branches.get(null)?.length ?? 0;
   const categoriesById = new Map(categories.map(category => [category.id, category]));
-  const parentIds = new Set(categories.map(category => category.parentId));
+  const branchIds = categories.filter(category => branches.has(category.id)).map(category => category.id);
+  const selection = categories.filter(category => selectedIds.has(category.id)).map(category => category.id);
+  const draggedSelection = draggedId ? selectedIds.has(draggedId) ? selection : [draggedId] : [];
+  const busy = isMoving || busyCategoryId !== null;
+  const moveTargetIsValid = moveTarget !== null && canMoveTo(selection, moveTarget || null);
   const savedShortcut = categories.find(category => category.isHeaderShortcut);
   const visibleCategories = categories.filter(category => category.isVisible);
   const selectedShortcutId = shortcutDraft === ""
@@ -96,6 +108,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       setDescription("");
       setIsVisible(true);
       const loaded = await load();
+      expandCategoryPath(parentId || null);
       setSortOrder(nextSortOrder(loaded));
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리를 추가했습니다.");
@@ -120,9 +133,36 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     setMessage("");
   }
 
+  function beginCreate(parent: string | null) {
+    setParentId(parent ?? "");
+    createForm.current?.querySelector<HTMLInputElement>("input[name=category-name]")?.focus();
+  }
+
+  function toggleBranch(id: string) {
+    setCollapsed(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function expandCategoryPath(id: string | null) {
+    if (!id) return;
+    setCollapsed(current => {
+      const next = new Set(current);
+      let categoryId: string | null = id;
+      while (categoryId) {
+        next.delete(categoryId);
+        categoryId = categoriesById.get(categoryId)?.parentId ?? null;
+      }
+      return next;
+    });
+  }
+
   async function updateCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!editing) return;
+    if (!editing || busy) return;
     setBusyCategoryId(editing.id);
     setError("");
     setMessage("");
@@ -142,6 +182,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 저장하지 못했습니다."));
       await load();
+      expandCategoryPath(editing.parentId ?? null);
       setEditing(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리 변경사항을 저장했습니다.");
@@ -202,14 +243,30 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     }
   }
 
-  function canDropOn(target: string | null) {
-    const dragged = draggedId ? categoriesById.get(draggedId) : undefined;
-    return Boolean(dragged && !busyCategoryId && (dragged.parentId ?? null) !== target
-      && canUseCategoryParent(target, dragged.id, categoriesById));
+  function toggleSelection(id: string) {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function canMoveTo(ids: string[], target: string | null) {
+    if (!ids.every(id => categoriesById.has(id) && canUseCategoryParent(target, id, categoriesById))) return false;
+    const selected = new Set(ids);
+    return ids.some(id => {
+      const parent = categoriesById.get(id)?.parentId ?? null;
+      if (parent === target) return false;
+      for (let ancestor = parent; ancestor; ancestor = categoriesById.get(ancestor)?.parentId ?? null) {
+        if (selected.has(ancestor)) return false;
+      }
+      return true;
+    });
   }
 
   function dragOver(event: DragEvent, target: string | null) {
-    if (!canDropOn(target)) return;
+    if (busy || !canMoveTo(draggedSelection, target)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     setDropTarget(target ?? "");
@@ -226,30 +283,39 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     setDropTarget(null);
   }
 
-  async function dropCategory(event: DragEvent, target: string | null) {
+  function dropCategory(event: DragEvent, target: string | null) {
     event.preventDefault();
-    const id = draggedId;
-    const allowed = canDropOn(target);
+    void moveCategories(draggedSelection, target);
     endDrag();
-    if (!id || !allowed) return;
-    setBusyCategoryId(id);
+  }
+
+  async function moveCategories(ids: string[], target: string | null) {
+    if (busy || !canMoveTo(ids, target)) return;
+    setIsMoving(true);
     setError("");
     setMessage("");
     try {
-      const response = await fetch(`/api/categories/${id}/parent`, {
+      const response = await fetch("/api/categories/parents", {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentId: target }),
+        body: JSON.stringify({ categoryIds: ids, parentId: target }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 이동하지 못했습니다."));
       await load();
+      expandCategoryPath(target);
+      setSelectedIds(current => {
+        const next = new Set(current);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      setMoveTarget(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
-      setMessage("카테고리 위치를 변경했습니다.");
+      setMessage(ids.length === 1 ? "카테고리 위치를 변경했습니다." : `선택한 카테고리 ${ids.length}개의 위치를 변경했습니다.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "카테고리를 이동하지 못했습니다.");
     } finally {
-      setBusyCategoryId(null);
+      setIsMoving(false);
     }
   }
 
@@ -260,7 +326,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   return (
     <Container data-ui-page="admin" className="mx-auto min-h-[75vh] w-full max-w-6xl px-4 py-12 sm:px-6">
       <header className="mb-8">
-        <p className="text-sm font-black tracking-[0.2em] text-emerald-600">TAXONOMY</p>
         <Heading className="mt-2 text-4xl font-black">카테고리 관리</Heading>
         <p className="mt-3 text-gray-600 dark:text-gray-300">이름, 주소, 노출 여부와 표시 순서를 한곳에서 관리합니다.</p>
       </header>
@@ -276,40 +341,152 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           </p>
         ) : null}
       </div>
-      <form data-ui="panel" className="mb-6 bg-white p-6 dark:bg-[#252525]" onSubmit={saveHeaderShortcut}>
-        <h2 className="text-2xl font-black">상단 카테고리 바로가기</h2>
-        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-          공개 카테고리 하나를 선택하면 방문자에게 블로그 우측 상단에 바로가기 링크가 표시됩니다.
-        </p>
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="block min-w-0 flex-1 sm:max-w-sm">
-            <span className="mb-1 block text-sm font-bold">바로가기 카테고리</span>
-            <select
-              data-ui="input"
-              className="w-full px-3 py-2"
-              disabled={isSavingShortcut}
-              onChange={event => { setShortcutDraft(event.target.value); setMessage(""); }}
-              value={selectedShortcutId}
-            >
-              <option value="">표시 안 함</option>
-              {savedShortcut && !savedShortcut.isVisible && (
-                <option value={savedShortcut.id} disabled>{savedShortcut.name} (비공개)</option>
-              )}
-              {tree.filter(({ category }) => category.isVisible).map(({ category, depth }) => (
-                <option key={category.id} value={category.id}>{"— ".repeat(Math.min(depth, 6))}{category.name}</option>
-              ))}
-            </select>
-          </label>
-          <button className={primaryButton} disabled={!shortcutChanged || isSavingShortcut} type="submit">
-            {isSavingShortcut ? "저장 중..." : "바로가기 저장"}
+      <section data-ui="panel" className="category-tree-panel mb-6 bg-white p-4 sm:p-6 dark:bg-[#252525]">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-black">카테고리 트리</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-gray-500 dark:text-gray-400">최상위 {rootCount}개 · 전체 {categories.length}개</span>
+            <button type="button" className={neutralButton} disabled={draggedId !== null || branchIds.every(id => collapsed.has(id))}
+              onClick={() => setCollapsed(new Set(branchIds))}>모두 접기</button>
+            <button type="button" className={neutralButton} disabled={draggedId !== null || !branchIds.some(id => collapsed.has(id))}
+              onClick={() => setCollapsed(new Set())}>모두 펼치기</button>
+          </div>
+        </div>
+        <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">여러 카테고리를 체크해 함께 이동하거나, 체크한 항목 하나를 끌어 선택한 항목을 함께 옮길 수 있습니다.</p>
+        {selection.length > 0 && (
+          <form className="category-tree-bulk" onSubmit={event => {
+            event.preventDefault();
+            if (moveTargetIsValid) void moveCategories(selection, moveTarget || null);
+          }}>
+            <span role="status" className="font-bold">{selection.length}개 선택</span>
+            <label className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold">이동할 위치</span>
+              <select data-ui="input" className="min-w-0 max-w-full px-3 py-2 text-sm" disabled={busy}
+                value={moveTargetIsValid ? moveTarget : "select"}
+                onChange={event => setMoveTarget(event.target.value)}>
+                <option value="select" disabled>위치 선택</option>
+                {canMoveTo(selection, null) && <option value="">최상위</option>}
+                {tree.filter(({ category }) => canMoveTo(selection, category.id)).map(({ category, depth }) => (
+                  <option key={category.id} value={category.id}>{"— ".repeat(Math.min(depth, 6))}{category.name} 아래</option>
+                ))}
+              </select>
+            </label>
+            <button className={primaryButton} type="submit" disabled={busy || !moveTargetIsValid}>{isMoving ? "이동 중…" : "선택 이동"}</button>
+            <button className={neutralButton} type="button" disabled={busy} onClick={() => {
+              setSelectedIds(new Set());
+              setMoveTarget(null);
+            }}>선택 해제</button>
+          </form>
+        )}
+        <div
+          className="category-tree-root"
+          data-drop-target={dropTarget === "" || undefined}
+          onDragOver={event => dragOver(event, null)}
+          onDragLeave={dragLeave}
+          onDrop={event => void dropCategory(event, null)}
+        >
+          <div>
+            <p className="font-bold">최상위 카테고리</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">여기에 놓아 최상위로 이동</p>
+          </div>
+          <button type="button" className={primaryButton} disabled={isSaving} onClick={() => beginCreate(null)}>
+            최상위 추가
           </button>
         </div>
-      </form>
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-        <form data-ui="panel" className="space-y-5 bg-white p-6 dark:bg-[#252525]" onSubmit={createCategory}>
+        {categories.length === 0 ? <p className="mt-4 text-sm text-gray-500">아직 카테고리가 없습니다.</p> : (
+          <div className="category-tree-scroll">
+            <CategoryTree branches={branches} collapsed={collapsed} onToggle={toggleBranch} renderCategory={(category, disclosure) => editing?.id === category.id ? (
+              <form data-ui="row" className="space-y-4 border border-emerald-300 p-4 dark:border-emerald-800" onSubmit={updateCategory}>
+                <div className="flex items-center gap-2">
+                  {disclosure}
+                  <p className="min-w-0 wrap-break-word font-bold">{category.name} 수정</p>
+                </div>
+                <CategoryParentField
+                  rows={tree.filter(({ category: parent }) => canUseCategoryParent(parent.id, category.id, categoriesById))}
+                  value={editing.parentId ?? ""}
+                  onChange={value => setEditing(current => current ? { ...current, parentId: value || null } : current)}
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <CategoryTextField label="이름" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, name: value } : current)} required value={editing.name} />
+                  <CategoryTextField label="slug" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, slug: value.toLowerCase() } : current)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={editing.slug} />
+                </div>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-bold text-gray-500">설명</span>
+                  <textarea data-ui="input" className="w-full resize-y px-3 py-2" maxLength={300} onChange={(event) => setEditing((current) => current ? { ...current, description: event.target.value } : current)} rows={3} value={editing.description ?? ""} />
+                </label>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="block w-28">
+                    <span className="mb-1 block text-xs font-bold text-gray-500">표시 순서</span>
+                    <input data-ui="input" className="w-full px-3 py-2" max={10_000} min={0} onChange={(event) => setEditing((current) => current ? { ...current, sortOrder: Number(event.target.value) } : current)} type="number" value={editing.sortOrder} />
+                  </label>
+                  <label className="flex min-h-10 items-center gap-2 px-2 text-sm font-bold">
+                    <input checked={editing.isVisible} className="size-4 accent-emerald-600" onChange={(event) => setEditing((current) => current ? { ...current, isVisible: event.target.checked } : current)} type="checkbox" />
+                    공개
+                  </label>
+                  <div className="ml-auto flex gap-2">
+                    <button className={neutralButton} disabled={busyCategoryId === category.id} onClick={() => setEditing(null)} type="button">취소</button>
+                    <button className={primaryButton} disabled={busy} type="submit">{busyCategoryId === category.id ? "저장 중..." : "저장"}</button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              <article
+                data-ui="row"
+                className="category-tree-node"
+                data-selected={selectedIds.has(category.id) || undefined}
+                data-drop-target={dropTarget === category.id || undefined}
+                draggable={!busy}
+                onDragStart={event => {
+                  event.dataTransfer.effectAllowed = "move";
+                  event.dataTransfer.setData("text/plain", category.id);
+                  setDraggedId(category.id);
+                }}
+                onDragEnd={endDrag}
+                onDragOver={event => dragOver(event, category.id)}
+                onDragLeave={dragLeave}
+                onDrop={event => void dropCategory(event, category.id)}
+              >
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <input type="checkbox" className="size-4 self-center accent-emerald-600" checked={selectedIds.has(category.id)} disabled={busy}
+                      aria-label={`${category.name} 선택`} onChange={() => toggleSelection(category.id)} />
+                    {disclosure}
+                    <span aria-hidden="true" className="cursor-grab text-gray-500">⠿</span>
+                    <strong className="wrap-break-word text-base">{category.name}</strong>
+                    <span className="font-mono text-xs text-gray-500 dark:text-gray-400">/{category.slug}</span>
+                    <span className={`text-xs font-bold ${category.isVisible ? "text-emerald-600" : "text-amber-600"}`}>
+                      {category.isVisible ? "공개" : category.isLocallyVisible ? "상위 카테고리 숨김" : "숨김"}
+                    </span>
+                  </p>
+                  <small className="mt-1 block break-words leading-5 text-gray-500 dark:text-gray-400">
+                      글 {category.postCount}개 · 순서 {category.sortOrder}{category.description && ` · ${category.description}`}
+                  </small>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button className={neutralButton} disabled={isSaving} onClick={() => beginCreate(category.id)}
+                    aria-label={`${category.name} 하위 카테고리 추가`} type="button">하위 추가</button>
+                  <button className={neutralButton} disabled={busy} onClick={() => beginEdit(category)} type="button">수정</button>
+                  <button
+                    className="border border-red-300 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+                    disabled={category.postCount > 0 || branches.has(category.id) || busy}
+                    onClick={() => void deleteCategory(category)}
+                    title={branches.has(category.id) ? "하위 카테고리를 먼저 이동하거나 삭제해 주세요."
+                      : category.postCount > 0 ? "게시글이 있는 카테고리는 삭제할 수 없습니다." : undefined}
+                    type="button"
+                  >
+                    {busyCategoryId === category.id ? "처리 중..." : "삭제"}
+                  </button>
+                </div>
+              </article>
+            )} />
+          </div>
+        )}
+      </section>
+      <div className="grid items-start gap-6 lg:grid-cols-2">
+        <form ref={createForm} data-ui="panel" className="space-y-5 bg-white p-6 dark:bg-[#252525]" onSubmit={createCategory}>
           <h2 className="text-2xl font-black">새 카테고리</h2>
           <CategoryParentField rows={tree} value={parentId} onChange={setParentId} />
-          <CategoryTextField label="이름" maxLength={80} onChange={setName} required value={name} />
+          <CategoryTextField label="이름" name="category-name" maxLength={80} onChange={setName} required value={name} />
           <CategoryTextField
             help="영문 소문자, 숫자, 하이픈만 사용합니다."
             label="주소용 slug"
@@ -350,107 +527,35 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
             {isSaving ? "추가 중..." : "카테고리 추가"}
           </button>
         </form>
-
-        <section data-ui="panel" className="bg-white p-6 dark:bg-[#252525]">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <h2 className="text-2xl font-black">카테고리 트리</h2>
-            <span className="text-sm text-gray-500 dark:text-gray-400">{categories.length}개</span>
+        <form data-ui="panel" className="bg-white p-6 dark:bg-[#252525]" onSubmit={saveHeaderShortcut}>
+          <h2 className="text-2xl font-black">상단 카테고리 바로가기</h2>
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+            공개 카테고리 하나를 선택하면 방문자에게 블로그 우측 상단에 바로가기 링크가 표시됩니다.
+          </p>
+          <div className="mt-4 flex flex-wrap items-end gap-3">
+            <label className="block min-w-0 flex-1 sm:max-w-sm">
+              <span className="mb-1 block text-sm font-bold">바로가기 카테고리</span>
+              <select
+                data-ui="input"
+                className="w-full px-3 py-2"
+                disabled={isSavingShortcut}
+                onChange={event => { setShortcutDraft(event.target.value); setMessage(""); }}
+                value={selectedShortcutId}
+              >
+                <option value="">표시 안 함</option>
+                {savedShortcut && !savedShortcut.isVisible && (
+                  <option value={savedShortcut.id} disabled>{savedShortcut.name} (비공개)</option>
+                )}
+                {tree.filter(({ category }) => category.isVisible).map(({ category, depth }) => (
+                  <option key={category.id} value={category.id}>{"— ".repeat(Math.min(depth, 6))}{category.name}</option>
+                ))}
+              </select>
+            </label>
+            <button className={primaryButton} disabled={!shortcutChanged || isSavingShortcut} type="submit">
+              {isSavingShortcut ? "저장 중..." : "바로가기 저장"}
+            </button>
           </div>
-          {categories.length === 0 ? (
-            <p data-ui="notice" className="bg-gray-50 p-4 text-sm text-gray-500 dark:bg-gray-800/60 dark:text-gray-400">
-              아직 카테고리가 없습니다.
-            </p>
-          ) : (
-            <>
-            <p className="mb-3 text-sm text-gray-500 dark:text-gray-400">카테고리를 다른 항목 위에 놓으면 그 아래로 이동합니다.</p>
-            <div
-              className={`mb-3 border border-dashed p-3 text-sm ${dropTarget === "" ? "border-emerald-600 bg-emerald-500/15" : "border-gray-400"}`}
-              onDragOver={event => dragOver(event, null)}
-              onDragLeave={dragLeave}
-              onDrop={event => void dropCategory(event, null)}
-            >
-              여기에 놓아 최상위로 이동
-            </div>
-            <ul className="space-y-3">
-              {tree.map(({ category, depth }) => <li key={category.id} style={{ marginInlineStart: `${Math.min(depth, 5) * 0.75}rem` }}>
-              {editing?.id === category.id ? (
-                <form data-ui="row" className="space-y-4 border border-emerald-300 p-4 dark:border-emerald-800" onSubmit={updateCategory}>
-                  <CategoryParentField
-                    rows={tree.filter(({ category: parent }) => canUseCategoryParent(parent.id, category.id, categoriesById))}
-                    value={editing.parentId ?? ""}
-                    onChange={value => setEditing(current => current ? { ...current, parentId: value || null } : current)}
-                  />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <CategoryTextField label="이름" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, name: value } : current)} required value={editing.name} />
-                    <CategoryTextField label="slug" maxLength={80} onChange={(value) => setEditing((current) => current ? { ...current, slug: value.toLowerCase() } : current)} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" required value={editing.slug} />
-                  </div>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-bold text-gray-500">설명</span>
-                    <textarea data-ui="input" className="w-full resize-y px-3 py-2" maxLength={300} onChange={(event) => setEditing((current) => current ? { ...current, description: event.target.value } : current)} rows={3} value={editing.description ?? ""} />
-                  </label>
-                  <div className="flex flex-wrap items-end gap-3">
-                    <label className="block w-28">
-                      <span className="mb-1 block text-xs font-bold text-gray-500">표시 순서</span>
-                      <input data-ui="input" className="w-full px-3 py-2" max={10_000} min={0} onChange={(event) => setEditing((current) => current ? { ...current, sortOrder: Number(event.target.value) } : current)} type="number" value={editing.sortOrder} />
-                    </label>
-                    <label className="flex min-h-10 items-center gap-2 px-2 text-sm font-bold">
-                      <input checked={editing.isVisible} className="size-4 accent-emerald-600" onChange={(event) => setEditing((current) => current ? { ...current, isVisible: event.target.checked } : current)} type="checkbox" />
-                      공개
-                    </label>
-                    <div className="ml-auto flex gap-2">
-                      <button className={neutralButton} disabled={busyCategoryId === category.id} onClick={() => setEditing(null)} type="button">취소</button>
-                      <button className={primaryButton} disabled={busyCategoryId === category.id} type="submit">{busyCategoryId === category.id ? "저장 중..." : "저장"}</button>
-                    </div>
-                  </div>
-                </form>
-              ) : (
-                <article
-                  data-ui="row"
-                  className={`flex flex-col gap-4 border p-4 lg:flex-row lg:items-center lg:justify-between ${dropTarget === category.id ? "border-emerald-600 bg-emerald-500/15" : "border-gray-200 dark:border-gray-700"}`}
-                  draggable={busyCategoryId === null}
-                  onDragStart={event => {
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", category.id);
-                    setDraggedId(category.id);
-                  }}
-                  onDragEnd={endDrag}
-                  onDragOver={event => dragOver(event, category.id)}
-                  onDragLeave={dragLeave}
-                  onDrop={event => void dropCategory(event, category.id)}
-                >
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                      <span aria-hidden="true" className="cursor-grab text-gray-500">⠿</span>
-                      <strong className="break-all text-base">{category.name}</strong>
-                      <span className="font-mono text-xs text-gray-500 dark:text-gray-400">/{category.slug}</span>
-                      <span className={`text-xs font-bold ${category.isVisible ? "text-emerald-600" : "text-amber-600"}`}>
-                        {category.isVisible ? "공개" : category.isLocallyVisible ? "상위 카테고리 숨김" : "숨김"}
-                      </span>
-                    </p>
-                    <small className="mt-1 block break-words leading-5 text-gray-500 dark:text-gray-400">
-                      순서 {category.sortOrder} · {category.description || "설명 없음"} · 글 {category.postCount}개
-                    </small>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button className={neutralButton} disabled={busyCategoryId !== null} onClick={() => beginEdit(category)} type="button">수정</button>
-                    <button
-                      className="border border-red-300 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
-                      disabled={category.postCount > 0 || parentIds.has(category.id) || busyCategoryId !== null}
-                      onClick={() => void deleteCategory(category)}
-                      title={parentIds.has(category.id) ? "하위 카테고리를 먼저 이동하거나 삭제해 주세요."
-                        : category.postCount > 0 ? "게시글이 있는 카테고리는 삭제할 수 없습니다." : undefined}
-                      type="button"
-                    >
-                      {busyCategoryId === category.id ? "처리 중..." : "삭제"}
-                    </button>
-                  </div>
-                </article>
-              )}
-              </li>)}
-            </ul>
-            </>
-          )}
-        </section>
+        </form>
       </div>
     </Container>
   );
@@ -485,7 +590,7 @@ function CategoryTextField({
   value: string;
   onChange: (value: string) => void;
   help?: string;
-} & Pick<React.ComponentProps<"input">, "maxLength" | "pattern" | "placeholder" | "required">) {
+} & Pick<React.ComponentProps<"input">, "maxLength" | "name" | "pattern" | "placeholder" | "required">) {
   return (
     <label className="block">
       <span className="mb-2 block text-sm font-bold">{label}</span>

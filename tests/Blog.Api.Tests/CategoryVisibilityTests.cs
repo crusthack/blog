@@ -53,6 +53,7 @@ public sealed class CategoryVisibilityTests
             await categoryResponse.Content.ReadFromJsonAsync<CategoryResponse>());
         var child = await CreateCategory(owner, "child", category.Id);
         var leaf = await CreateCategory(owner, "leaf", child.Id);
+        var sibling = await CreateCategory(owner, "sibling", category.Id);
         Assert.Equal(child.Id, leaf.ParentId);
         Assert.False(leaf.IsVisible);
         Assert.True(leaf.IsLocallyVisible);
@@ -108,10 +109,19 @@ public sealed class CategoryVisibilityTests
         Assert.Empty((await owner.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.CodeProtected))!.Items);
         Assert.Empty((await visitor.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.Private))!.Items);
 
-        Assert.Equal(HttpStatusCode.NoContent, await SetParent(owner, child.Id, null));
+        var batch = new[] { child.Id, leaf.Id, sibling.Id };
+        Assert.Equal(HttpStatusCode.Unauthorized, await SetParents(visitor, batch, null));
+        Assert.Equal(HttpStatusCode.BadRequest, await SetParents(owner, batch, leaf.Id));
+        Assert.Equal(HttpStatusCode.NotFound, await SetParents(owner, [child.Id, Guid.NewGuid()], null));
+        var unchanged = (await owner.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!;
+        Assert.Equal(category.Id, Assert.Single(unchanged, item => item.Id == child.Id).ParentId);
+        Assert.Equal(category.Id, Assert.Single(unchanged, item => item.Id == sibling.Id).ParentId);
+
+        Assert.Equal(HttpStatusCode.NoContent, await SetParents(owner, batch, null));
         var movedCategories = (await visitor.GetFromJsonAsync<CategoryResponse[]>("/api/categories"))!;
         Assert.Null(Assert.Single(movedCategories, item => item.Id == child.Id).ParentId);
-        Assert.Contains(movedCategories, item => item.Id == leaf.Id && item.IsVisible);
+        Assert.Null(Assert.Single(movedCategories, item => item.Id == sibling.Id).ParentId);
+        Assert.Contains(movedCategories, item => item.Id == leaf.Id && item.ParentId == child.Id && item.IsVisible);
         Assert.Equal(HttpStatusCode.OK, (await visitor.GetAsync($"/api/posts/{post.PostNumber}")).StatusCode);
 
         Assert.Equal(HttpStatusCode.NoContent, await SetParent(owner, child.Id, category.Id));
@@ -146,6 +156,9 @@ public sealed class CategoryVisibilityTests
 
     private static async Task<HttpStatusCode> SetParent(HttpClient client, Guid id, Guid? parentId) =>
         (await client.PutAsJsonAsync($"/api/categories/{id}/parent", new SetCategoryParentRequest { ParentId = parentId })).StatusCode;
+
+    private static async Task<HttpStatusCode> SetParents(HttpClient client, Guid[] ids, Guid? parentId) =>
+        (await client.PutAsJsonAsync("/api/categories/parents", new SetCategoryParentsRequest { CategoryIds = ids, ParentId = parentId })).StatusCode;
 
     private sealed record DirectoryResult(PostSummaryResponse[] Items);
 }
