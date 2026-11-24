@@ -152,7 +152,7 @@ async function main() {
     await rm(stage,{recursive:true,force:true});
   }
   console.log(JSON.stringify(result, null, 2));
-  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `changed=${result.changed}\n`);
+  if (process.env.GITHUB_OUTPUT) await appendFile(process.env.GITHUB_OUTPUT, `changed=${result.changed}\nversion=${result.fingerprint.slice(0, 40)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY,
     `### GitHub Pages\n\n${result.changed ? 'New static snapshot ready for deployment.' : 'No changes since the last deployment. Deployment skipped.'}\n\nPublic posts: ${result.postCount}\n`);
 }

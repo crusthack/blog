@@ -31,6 +31,8 @@ jobs:
       pages: read
     outputs:
       changed: ${{ steps.snapshot.outputs.changed }}
+      version: ${{ steps.snapshot.outputs.version }}
+      artifact_id: ${{ steps.upload.outputs.artifact_id }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +55,7 @@ jobs:
           PAGES_SOURCE_VERSION: ${{ inputs.source_version }}
           PAGES_FORCE: ${{ inputs.force || false }}
       - name: Upload changed snapshot
+        id: upload
         if: steps.snapshot.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
@@ -71,4 +74,29 @@ jobs:
     steps:
       - name: Deploy changed snapshot
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/github-script@v7
+        env:
+          ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
+          PAGES_VERSION: ${{ needs.build.outputs.version }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { data } = await github.request('POST /repos/{owner}/{repo}/pages/deployments', {
+              owner, repo,
+              artifact_id: Number(process.env.ARTIFACT_ID),
+              pages_build_version: process.env.PAGES_VERSION,
+              oidc_token: await core.getIDToken()
+            });
+            core.setOutput('page_url', data.page_url);
+            for (let attempt = 0; attempt < 120; attempt++) {
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              const response = await github.request('GET /repos/{owner}/{repo}/pages/deployments/{id}', {
+                owner, repo, id: data.id
+              });
+              if (response.data.status === 'succeed') return;
+              if (['deployment_failed', 'deployment_content_failed', 'cancelled', 'lost_count', 'sync_registry_failed'].includes(response.data.status)) {
+                throw new Error('Pages deployment: ' + response.data.status);
+              }
+            }
+            throw new Error('Timed out waiting for GitHub Pages.');
+
