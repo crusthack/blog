@@ -1,3 +1,5 @@
+import postcss from 'postcss';
+import tailwind from '@tailwindcss/postcss';
 import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -53,7 +55,8 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
       assets.push({ path: target, hash: digest(bytes) });
     }
   }
-  const files = ['package-lock.json', 'apps/frontend/content/home.md', 'apps/frontend/content/about.md', 'apps/frontend/src/lib/markdownHeadings.ts',
+  const files = ['package-lock.json', 'apps/frontend/content/home.md', 'apps/frontend/content/about.md', 'apps/frontend/src/lib/markdownHeadings.ts', 'apps/frontend/src/lib/siteLinks.ts',
+    ...['globals','slides','community','admin'].map(name => `apps/frontend/src/app/${name}.css`),
     ...(await readdir(path.join(root, 'scripts/pages'))).sort().map(name => `scripts/pages/${name}`)];
   const generator = [];
   for (const name of files) generator.push([name, digest((await readFile(path.join(root, name), 'utf8')).replace(/\r\n/g, '\n'))]);
@@ -67,7 +70,7 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   for (const page of ['home', 'about']) {
     const content = snapshot.pages[page].content || await defaultPage(page);
     await emit(page === 'home' ? 'index.html' : 'about/index.html', renderer.layout(content.title, content.description,
-      `<article>${renderer.markdown(content.markdown)}</article>${page === 'home' ? `<h2>최근 공개 글</h2>${renderer.list([...snapshot.posts].sort((a, b) => b.updatedAtUtc.localeCompare(a.updatedAtUtc)).slice(0, 10))}` : ''}`));
+      `<article class="content-markdown markdown-body">${renderer.markdown(content.markdown)}</article>${page === 'home' ? `<h2>최근 공개 글</h2>${renderer.list([...snapshot.posts].sort((a, b) => b.updatedAtUtc.localeCompare(a.updatedAtUtc)).slice(0, 10))}` : ''}`));
   }
   await emit('posts/index.html', renderer.layout('전체 글', '공개 게시글 목록', renderer.list(snapshot.posts)));
   for (const category of snapshot.categories) {
@@ -79,7 +82,9 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
   }
   for (const post of snapshot.posts) await emit(pageFile(postPath(post).slice(1)), renderer.article(post));
   await emit('404.html', renderer.layout('페이지를 찾을 수 없습니다', '', `<p><a href="${base}/posts/">전체 글 보기</a></p>`));
-  await emit('static/site.css', await readFile(path.join(root, 'scripts/pages/site.css')));
+  const from = path.join(root, 'apps/frontend/src/app/globals.css');
+  const shared = await postcss([tailwind({ base: path.join(root, 'apps/frontend') })]).process(await readFile(from, 'utf8'), { from });
+  await emit('static/site.css', shared.css + '\n' + await readFile(path.join(root, 'scripts/pages/site.css'), 'utf8'));
   await emit('.nojekyll', '');
   const routes = ['/', '/posts/', '/about/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
   await emit('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(destination.origin + base + route)}</loc></url>`).join('')}</urlset>`);
