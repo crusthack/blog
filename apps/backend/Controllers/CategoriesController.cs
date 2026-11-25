@@ -165,6 +165,28 @@ public sealed partial class CategoriesController(BlogDbContext db) : ControllerB
     }
 
     [Authorize(Roles = Roles.Owner)]
+    [HttpPut("{id:guid}/visibility")]
+    public async Task<IActionResult> SetVisibility(Guid id, SetCategoryVisibilityRequest request)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var tree = await db.Categories.ToDictionaryAsync(category => category.Id);
+        if (!tree.TryGetValue(id, out var category)) return NotFound();
+        if (category.IsLocallyVisible != request.ExpectedIsVisible)
+            return Conflict(new ProblemDetails { Title = "카테고리의 공개 범위가 변경되었습니다. 목록에서 다시 확인해 주세요." });
+        if (category.ParentId is Guid parentId && !tree[parentId].IsVisible)
+            return Conflict(new ProblemDetails { Title = "상위 카테고리가 숨김 상태입니다." });
+
+        if (category.IsLocallyVisible != request.IsVisible)
+        {
+            category.IsLocallyVisible = request.IsVisible;
+            MoveCategories([category], category.ParentId, tree);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        return NoContent();
+    }
+
+    [Authorize(Roles = Roles.Owner)]
     [HttpPut("{id:guid}/parent")]
     public Task<IActionResult> SetParent(Guid id, SetCategoryParentRequest request) =>
         SetParents([id], request.ParentId);
@@ -330,6 +352,12 @@ public sealed class SetHeaderCategoriesRequest
 public sealed class SetCategoryParentRequest
 {
     public required Guid? ParentId { get; init; }
+}
+
+public sealed class SetCategoryVisibilityRequest
+{
+    public required bool IsVisible { get; init; }
+    public required bool ExpectedIsVisible { get; init; }
 }
 
 public sealed class SetCategoryParentsRequest

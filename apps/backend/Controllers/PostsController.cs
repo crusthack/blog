@@ -197,6 +197,42 @@ public sealed class PostsController(
 
     [Authorize(Roles = Roles.Owner)]
     [EnableRateLimiting("community-write")]
+    [HttpPut("{postNumber:long}/visibility")]
+    public async Task<IActionResult> SetVisibility(long postNumber, SetPostVisibilityRequest request)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var post = await db.Posts.Include(item => item.Category).SingleOrDefaultAsync(item => item.PostNumber == postNumber);
+        if (post is null) return NotFound();
+        if (post.Revision != request.ExpectedRevision)
+            return Conflict(new ProblemDetails { Title = "글이 변경되었습니다. 목록에서 다시 확인해 주세요." });
+        if (post.Category is { IsVisible: false })
+            return Conflict(new ProblemDetails { Title = "이 글의 카테고리가 숨김 상태입니다." });
+        if (post.Visibility == PostVisibility.CodeProtected)
+            return Conflict(new ProblemDetails { Title = "접근 코드가 있는 글의 공개 범위는 수정 화면에서 변경해 주세요." });
+
+        if (post.Visibility != request.Visibility)
+        {
+            _ = access.Configure(post, request.Visibility, null);
+            post.UpdatedAtUtc = DateTime.UtcNow;
+            if (post.Visibility == PostVisibility.Public)
+                post.PublishedAtUtc ??= post.UpdatedAtUtc;
+            post.Revision++;
+            Audit("post.update", postNumber);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
+        return Ok(new
+        {
+            post.Visibility,
+            post.Revision,
+            UpdatedAtUtc = DateTime.SpecifyKind(post.UpdatedAtUtc, DateTimeKind.Utc),
+            PublishedAtUtc = post.PublishedAtUtc is DateTime published ? DateTime.SpecifyKind(published, DateTimeKind.Utc) : (DateTime?)null,
+        });
+    }
+
+    [Authorize(Roles = Roles.Owner)]
+    [EnableRateLimiting("community-write")]
     [HttpPut("{postNumber:long}/priority")]
     public async Task<IActionResult> SetPriority(long postNumber, SetPostPriorityRequest request)
     {
@@ -383,4 +419,11 @@ public sealed class SetPostPriorityRequest
 {
     [Range(0, 10000)] public int Priority { get; init; }
     [Range(1, long.MaxValue)] public long ExpectedRevision { get; init; }
+}
+
+public sealed class SetPostVisibilityRequest
+{
+    [Required, RegularExpression("^(Public|Private)$")]
+    public required string Visibility { get; init; }
+    [Range(1, long.MaxValue)] public required long ExpectedRevision { get; init; }
 }

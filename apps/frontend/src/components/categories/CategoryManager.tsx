@@ -191,6 +191,35 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     }
   }
 
+  function inheritsHiddenCategory(category: Category) {
+    return Boolean(category.parentId && categoriesById.get(category.parentId)?.isVisible === false);
+  }
+
+  async function toggleCategoryVisibility(category: Category) {
+    if (busy || inheritsHiddenCategory(category)) return;
+    const current = category.isLocallyVisible ?? category.isVisible;
+    setBusyCategoryId(category.id);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/categories/${category.id}/visibility`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isVisible: !current, expectedIsVisible: current }),
+      });
+      if (!response.ok) throw new Error(await readProblem(response, "카테고리 공개 범위를 변경하지 못했습니다."));
+      await load();
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+      setMessage(`“${category.name}” 카테고리를 ${current ? "비공개" : "공개"}로 변경했습니다.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "카테고리 공개 범위를 변경하지 못했습니다.");
+      await load().catch(() => {});
+    } finally {
+      setBusyCategoryId(null);
+    }
+  }
+
   async function deleteCategory(category: Category) {
     if (!window.confirm(`'${category.name}'와 모든 하위 카테고리를 삭제하고, 그 안의 글을 휴지통으로 이동할까요?`)) return;
     setBusyCategoryId(category.id);
@@ -459,9 +488,20 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
                       </Link>
                     </strong>
                     <span className="font-mono text-xs text-gray-500 dark:text-gray-400">/{category.slug}</span>
-                    <span className={`text-xs font-bold ${category.isVisible ? "text-emerald-600" : "text-amber-600"}`}>
-                      {category.isVisible ? "공개" : category.isLocallyVisible ? "상위 카테고리 숨김" : "숨김"}
-                    </span>
+                    {inheritsHiddenCategory(category) ? (
+                      <span className="text-xs font-bold text-amber-600">비공개 · 상위 카테고리 숨김</span>
+                    ) : (
+                      <button
+                        type="button"
+                        className={`text-xs font-bold underline decoration-dotted underline-offset-2 disabled:opacity-50 ${category.isVisible ? "text-emerald-600" : "text-amber-600"}`}
+                        title={category.isVisible ? "비공개로 변경" : "공개로 변경"}
+                        aria-label={`${category.name} ${category.isVisible ? "공개 · 비공개로 변경" : "비공개 · 공개로 변경"}`}
+                        disabled={busy}
+                        onClick={() => void toggleCategoryVisibility(category)}
+                      >
+                        {category.isVisible ? "공개" : "비공개"}
+                      </button>
+                    )}
                   </p>
                   <small className="mt-1 block break-words leading-5 text-gray-500 dark:text-gray-400">
                       글 {category.postCount}개 · 순서 {category.sortOrder}{category.description && ` · ${category.description}`}

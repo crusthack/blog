@@ -128,13 +128,11 @@ public sealed class CategoryVisibilityTests
 
         Assert.Equal(HttpStatusCode.NoContent, await SetParent(owner, child.Id, category.Id));
         Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync($"/api/posts/{post.PostNumber}")).StatusCode);
-        var changed = await owner.PutAsJsonAsync($"/api/categories/{category.Id}", new SaveCategoryRequest
-        {
-            Name = category.Name,
-            Slug = category.Slug,
-            IsVisible = true,
-        });
-        Assert.Equal(HttpStatusCode.OK, changed.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, await SetCategoryVisibility(owner, leaf.Id, false, true));
+        Assert.Equal(HttpStatusCode.Conflict, await SetPostVisibility(owner, post, PostVisibility.Private));
+        Assert.Equal(HttpStatusCode.Unauthorized, await SetCategoryVisibility(visitor, category.Id, true, false));
+        Assert.Equal(HttpStatusCode.NoContent, await SetCategoryVisibility(owner, category.Id, true, false));
+        Assert.Equal(HttpStatusCode.Conflict, await SetCategoryVisibility(owner, category.Id, true, false));
         var published = Assert.Single((await visitor.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.Public))!.Items);
         Assert.Equal(post.PostNumber, published.PostNumber);
         Assert.False(published.CategoryIsHidden);
@@ -145,6 +143,17 @@ public sealed class CategoryVisibilityTests
         Assert.Equal(protectedPost.PostNumber, codeProtected.PostNumber);
         Assert.False(codeProtected.CategoryIsHidden);
         Assert.Empty((await owner.GetFromJsonAsync<DirectoryResult>(directory + PostVisibility.Private))!.Items);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, await SetPostVisibility(visitor, post, PostVisibility.Private));
+        Assert.Equal(HttpStatusCode.Conflict, await SetPostVisibility(owner, protectedPost, PostVisibility.Public));
+        Assert.Equal(HttpStatusCode.OK, await SetPostVisibility(owner, post, PostVisibility.Private));
+        Assert.Equal(HttpStatusCode.NotFound, (await visitor.GetAsync($"/api/posts/{post.PostNumber}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, await SetPostVisibility(owner, post, PostVisibility.Public));
+        var privatePost = (await owner.GetFromJsonAsync<PostDetailResponse>($"/api/posts/{post.PostNumber}"))!;
+        Assert.Equal(post.Content, privatePost.Content);
+        Assert.Equal(post.CategoryId, privatePost.CategoryId);
+        Assert.Equal(HttpStatusCode.OK, await SetPostVisibility(owner, privatePost, PostVisibility.Public));
+        Assert.Equal(HttpStatusCode.OK, (await visitor.GetAsync($"/api/posts/{post.PostNumber}")).StatusCode);
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await visitor.DeleteAsync($"/api/categories/{category.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/categories/{category.Id}")).StatusCode);
@@ -181,6 +190,20 @@ public sealed class CategoryVisibilityTests
 
     private static async Task<HttpStatusCode> SetParents(HttpClient client, Guid[] ids, Guid? parentId) =>
         (await client.PutAsJsonAsync("/api/categories/parents", new SetCategoryParentsRequest { CategoryIds = ids, ParentId = parentId })).StatusCode;
+
+    private static async Task<HttpStatusCode> SetCategoryVisibility(HttpClient client, Guid id, bool isVisible, bool expected) =>
+        (await client.PutAsJsonAsync($"/api/categories/{id}/visibility", new SetCategoryVisibilityRequest
+        {
+            IsVisible = isVisible,
+            ExpectedIsVisible = expected,
+        })).StatusCode;
+
+    private static async Task<HttpStatusCode> SetPostVisibility(HttpClient client, PostDetailResponse post, string visibility) =>
+        (await client.PutAsJsonAsync($"/api/posts/{post.PostNumber}/visibility", new SetPostVisibilityRequest
+        {
+            Visibility = visibility,
+            ExpectedRevision = post.Revision,
+        })).StatusCode;
 
     private sealed record DirectoryResult(PostSummaryResponse[] Items);
     private sealed record TrashItem(long PostNumber);

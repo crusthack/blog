@@ -48,6 +48,8 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   const [priorities, setPriorities] = useState<Record<number, string>>({});
   const [savingPriority, setSavingPriority] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [savingVisibility, setSavingVisibility] = useState<number | null>(null);
+  const isMutating = savingPriority !== null || deleting !== null || savingVisibility !== null;
 
   useEffect(() => {
     if (published) return;
@@ -123,7 +125,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
 
   async function savePriority(event: FormEvent<HTMLFormElement>, post: PostSummary) {
     event.preventDefault();
-    if (savingPriority !== null || deleting !== null) return;
+    if (isMutating) return;
     const priority = Number(priorities[post.postNumber] ?? post.priority ?? 0);
     if (!Number.isInteger(priority) || priority < 0 || priority > 10000) return;
     setSavingPriority(post.postNumber); setActionError(""); setMessage("");
@@ -142,8 +144,32 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
     } finally { setSavingPriority(null); }
   }
 
+  async function togglePostVisibility(post: PostSummary) {
+    if (isMutating || published || !isOwner || post.categoryIsHidden || post.visibility === "CodeProtected" || post.revision === undefined) return;
+    const next = post.visibility === "Public" ? "Private" : "Public";
+    setSavingVisibility(post.postNumber);
+    setActionError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/posts/${post.postNumber}/visibility`, {
+        method: "PUT", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visibility: next, expectedRevision: post.revision }),
+      });
+      if (!response.ok) throw new Error(await readProblem(response, "글의 공개 범위를 변경하지 못했습니다."));
+      const changed = await response.json() as Pick<PostSummary, "visibility" | "revision" | "updatedAtUtc" | "publishedAtUtc">;
+      setPosts(previous => previous.map(item => item.postNumber === post.postNumber ? { ...item, ...changed } : item));
+      setMessage(`“${post.title}” 글을 ${visibilityLabels[next]}로 변경했습니다.`);
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : "글의 공개 범위를 변경하지 못했습니다.");
+      setReload(value => value + 1);
+    } finally {
+      setSavingVisibility(null);
+    }
+  }
+
   async function deletePost(post: PostSummary) {
-    if (deleting !== null || savingPriority !== null || !window.confirm(`“${post.title}” 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관되며 복원할 수 있습니다.`)) return;
+    if (isMutating || !window.confirm(`“${post.title}” 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관되며 복원할 수 있습니다.`)) return;
     setDeleting(post.postNumber);
     setActionError("");
     setMessage("");
@@ -249,7 +275,21 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
                   <td className="board-category"><span title={post.categoryName ?? "미분류"}>{post.categoryName ?? "미분류"}</span></td>
                   <td className="board-title"><Link href={postPath(post)} title={post.title}>{post.title}</Link></td><td>{post.authorName}</td>
                   <td className="board-visibility">
-                    <span data-visibility={effectivePostVisibility(post)}>{visibilityLabels[effectivePostVisibility(post)]}</span>
+                    {isOwner && !published && !post.categoryIsHidden && post.visibility !== "CodeProtected" && post.revision !== undefined ? (
+                      <button
+                        type="button"
+                        className="underline decoration-dotted underline-offset-2 disabled:opacity-50"
+                        data-visibility={post.visibility}
+                        title={post.visibility === "Public" ? "비공개로 변경" : "공개로 변경"}
+                        aria-label={`${post.title} ${post.visibility === "Public" ? "공개 · 비공개로 변경" : "비공개 · 공개로 변경"}`}
+                        disabled={isMutating}
+                        onClick={() => void togglePostVisibility(post)}
+                      >
+                        {visibilityLabels[post.visibility]}
+                      </button>
+                    ) : (
+                      <span data-visibility={effectivePostVisibility(post)}>{visibilityLabels[effectivePostVisibility(post)]}</span>
+                    )}
                     {post.categoryIsHidden && <small className="block">카테고리 숨김</small>}
                   </td>
                   <td className="board-date"><time dateTime={dateOf(post)}>
@@ -257,14 +297,14 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
                   </time></td>
                   {manage && isOwner ? <td className="board-priority"><form onSubmit={event => void savePriority(event, post)}>
                     <input type="number" min={0} max={10000} step={1} required aria-label={`${post.title} 우선순위`}
-                      value={priorities[post.postNumber] ?? post.priority ?? 0} disabled={savingPriority !== null || deleting !== null}
+                      value={priorities[post.postNumber] ?? post.priority ?? 0} disabled={isMutating}
                       onChange={event => setPriorities(values => ({ ...values, [post.postNumber]: event.target.value }))} />
-                    <button type="submit" disabled={savingPriority !== null || deleting !== null || Number(priorities[post.postNumber] ?? post.priority ?? 0) === (post.priority ?? 0)}
+                    <button type="submit" disabled={isMutating || Number(priorities[post.postNumber] ?? post.priority ?? 0) === (post.priority ?? 0)}
                       aria-label={`${post.title} 우선순위 저장`}>{savingPriority === post.postNumber ? "저장 중" : "저장"}</button>
                   </form></td> : null}
                   {manage ? <td className="board-actions"><div>
                     <Link href={`/write/${post.postNumber}`} aria-label={`${post.title} 수정`}>수정</Link>
-                    <button type="button" disabled={deleting !== null || savingPriority !== null} aria-label={`${post.title} 삭제`}
+                    <button type="button" disabled={isMutating} aria-label={`${post.title} 삭제`}
                       onClick={() => void deletePost(post)}>{deleting === post.postNumber ? "삭제 중" : "삭제"}</button>
                   </div></td> : null}
                 </tr>)}
