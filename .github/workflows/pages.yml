@@ -1,8 +1,6 @@
 name: GitHub Pages
 
 on:
-  push:
-    branches: [codex/pages-preview]
   workflow_dispatch:
     inputs:
       source_version:
@@ -23,7 +21,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/codex/pages-preview'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:
