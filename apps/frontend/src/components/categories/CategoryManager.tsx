@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { type Category, readProblem } from "@/lib/contracts";
 import { canUseCategoryParent, flattenCategories, getHeaderShortcuts, groupCategories } from "@/lib/categoryTree";
+import { useCategories } from "./CategoriesProvider";
 import { CategoryTree } from "./CategoryTree";
 import { CategoryDiagram } from "./CategoryDiagram";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
@@ -20,11 +21,12 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
   const Heading = embedded ? "h2" : "h1";
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [categories, setCategories] = useState<Category[]>([]);
+  const { categories, error: categoryError, isLoading: isCategoriesLoading } = useCategories();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
-  const [sortOrder, setSortOrder] = useState(0);
+  const [sortOrderOverride, setSortOrderOverride] = useState<number | null>(null);
+  const sortOrder = sortOrderOverride ?? nextSortOrder(categories);
   const [isVisible, setIsVisible] = useState(true);
   const [parentId, setParentId] = useState("");
   const [editing, setEditing] = useState<CategoryDraft | null>(null);
@@ -68,40 +70,9 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     editShortcuts(next);
   }
 
-  const load = useCallback(async () => {
-    const response = await fetch("/api/categories", { cache: "no-store", credentials: "include" });
-    if (!response.ok) throw new Error(await readProblem(response, "카테고리를 불러오지 못했습니다."));
-    const loaded = ((await response.json()) as Category[]).sort(
-      (left, right) => left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "ko"),
-    );
-    setCategories(loaded);
-    return loaded;
-  }, []);
-
   useEffect(() => {
-    if (isAuthLoading) return;
-    if (!user?.isOwner) {
-      router.replace("/login");
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void load()
-        .then((loaded) => setSortOrder(nextSortOrder(loaded)))
-        .catch((reason: unknown) => setError(
-          reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.",
-        ));
-    }, 0);
-    function refreshCategories() {
-      void load().catch((reason: unknown) => setError(
-        reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.",
-      ));
-    }
-    window.addEventListener(categoriesUpdatedEvent, refreshCategories);
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener(categoriesUpdatedEvent, refreshCategories);
-    };
-  }, [isAuthLoading, load, router, user]);
+    if (!isAuthLoading && !user?.isOwner) router.replace("/login");
+  }, [isAuthLoading, router, user]);
 
   async function createCategory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -120,8 +91,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       setSlug("");
       setDescription("");
       setIsVisible(true);
-      const loaded = await load();
-      setSortOrder(nextSortOrder(loaded));
+      setSortOrderOverride(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리를 추가했습니다.");
     } catch (reason) {
@@ -180,7 +150,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 저장하지 못했습니다."));
-      await load();
       setEditing(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리 변경사항을 저장했습니다.");
@@ -208,13 +177,12 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isVisible: !current, expectedIsVisible: current }),
       });
+      if (response.status === 409) window.dispatchEvent(new Event(categoriesUpdatedEvent));
       if (!response.ok) throw new Error(await readProblem(response, "카테고리 공개 범위를 변경하지 못했습니다."));
-      await load();
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage(`“${category.name}” 카테고리를 ${current ? "비공개" : "공개"}로 변경했습니다.`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "카테고리 공개 범위를 변경하지 못했습니다.");
-      await load().catch(() => {});
     } finally {
       setBusyCategoryId(null);
     }
@@ -232,7 +200,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 삭제하지 못했습니다."));
       if (editing?.id === category.id) setEditing(null);
-      await load();
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("카테고리를 삭제했습니다. 소속 글은 휴지통에서 복원할 수 있습니다.");
     } catch (reason) {
@@ -256,12 +223,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         body: JSON.stringify({ categoryIds: shortcutIds }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "상단 바로가기를 저장하지 못했습니다."));
-      const orders = new Map(shortcutIds.map((id, order) => [id, order]));
-      setCategories(current => current.map(category => ({
-        ...category,
-        isHeaderShortcut: orders.has(category.id),
-        headerShortcutOrder: orders.get(category.id) ?? null,
-      })));
       setShortcutDraft(null);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
       setMessage("상단 카테고리 바로가기를 저장했습니다.");
@@ -331,7 +292,6 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         body: JSON.stringify({ categoryIds: ids, parentId: target }),
       });
       if (!response.ok) throw new Error(await readProblem(response, "카테고리를 이동하지 못했습니다."));
-      await load();
       setSelectedIds(current => {
         const next = new Set(current);
         for (const id of ids) next.delete(id);
@@ -351,6 +311,10 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
     return <Container className="mx-auto max-w-6xl p-10 text-gray-500 dark:text-gray-400">권한을 확인하고 있습니다.</Container>;
   }
 
+  if (isCategoriesLoading) {
+    return <Container className="mx-auto max-w-6xl p-10 text-gray-500 dark:text-gray-400">카테고리를 불러오고 있습니다.</Container>;
+  }
+
   return (
     <Container data-ui-page="admin" className="mx-auto min-h-[75vh] w-full max-w-6xl px-4 py-12 sm:px-6">
       <header className="mb-8">
@@ -358,9 +322,9 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
         <p className="mt-3 text-gray-600 dark:text-gray-300">이름, 주소, 노출 여부와 표시 순서를 한곳에서 관리합니다.</p>
       </header>
       <div aria-live="polite">
-        {error ? (
+        {error || categoryError ? (
           <p data-ui="notice" className="mb-6 bg-red-50 p-4 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
-            {error}
+            {error || categoryError}
           </p>
         ) : null}
         {message ? (
@@ -545,7 +509,7 @@ export function CategoryManager({ embedded = false }: { embedded?: boolean } = {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-bold">표시 순서</span>
-              <input data-ui="input" className="w-full px-3 py-2.5" max={10_000} min={0} onChange={(event) => setSortOrder(Number(event.target.value))} type="number" value={sortOrder} />
+              <input data-ui="input" className="w-full px-3 py-2.5" max={10_000} min={0} onChange={(event) => setSortOrderOverride(Number(event.target.value))} type="number" value={sortOrder} />
             </label>
             <label data-ui="row" className="flex items-center gap-3 border border-gray-200 px-4 py-3 text-sm font-bold dark:border-gray-700 sm:self-end">
               <input checked={isVisible} className="size-4 accent-emerald-600" onChange={(event) => setIsVisible(event.target.checked)} type="checkbox" />

@@ -5,10 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { Category } from "@/lib/contracts";
+import { useCategories } from "@/components/categories/CategoriesProvider";
 import { getHeaderShortcuts } from "@/lib/categoryTree";
 import { navigationExternalLinks, type ExternalLink } from "@/lib/siteLinks";
-import { categoriesUpdatedEvent, externalLinksUpdatedEvent } from "@/lib/uiEvents";
+import { externalLinksUpdatedEvent } from "@/lib/uiEvents";
 
 export function SiteHeader() {
   const published = usePublished();
@@ -17,7 +17,7 @@ export function SiteHeader() {
   const categoryPath = pathname.match(/^\/categories\/([^/]+)$/);
   const writeHref = categoryPath && categoryPath[1] !== "manage" ? `/write?category=${categoryPath[1]}` : "/write";
   const { user, isLoading, logout } = useAuth();
-  const [categories, setCategories] = useState<Category[]>(published?.categories ?? []);
+  const { categories } = useCategories();
   const topCategories = categories.filter(category =>
     !category.parentId && (category.isVisible ? !category.isHeaderShortcut : Boolean(user?.isOwner)));
   const shortcutCategories = getHeaderShortcuts(categories).filter(category => category.isVisible);
@@ -27,36 +27,6 @@ export function SiteHeader() {
   const publicMenuRef = useRef<HTMLDetailsElement>(null);
   const categoriesMenuRef = useRef<HTMLDetailsElement>(null);
   const ownerMenuRef = useRef<HTMLDetailsElement>(null);
-
-  useEffect(() => {
-    if (published) return;
-    let controller: AbortController | null = null;
-    const loadCategories = () => {
-      controller?.abort();
-      controller = new AbortController();
-      void fetch("/api/categories", {
-        cache: "no-store",
-        credentials: "include",
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          if (!response.ok) return;
-          setCategories((await response.json()) as Category[]);
-        })
-        .catch((error: unknown) => {
-          if (error instanceof DOMException && error.name === "AbortError") return;
-          setCategories([]);
-        });
-    };
-    const timer = window.setTimeout(loadCategories, 0);
-    window.addEventListener(categoriesUpdatedEvent, loadCategories);
-
-    return () => {
-      controller?.abort();
-      window.clearTimeout(timer);
-      window.removeEventListener(categoriesUpdatedEvent, loadCategories);
-    };
-  }, [user, published]);
 
   useEffect(() => {
     if (published) return;

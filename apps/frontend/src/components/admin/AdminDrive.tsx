@@ -55,8 +55,20 @@ export function AdminDrive() {
         if (file.size > (data?.maxFileBytes ?? 25 * 1024 ** 2)) throw new Error(`${file.name}: 파일은 25MB 이하여야 합니다.`);
         setMessage(`${done + 1} / ${files.length} 업로드 중 · ${file.name}`);
         const body = new FormData(); body.append("file", file); body.append("parentId", folder);
-        const response = await fetch("/api/admin/drive/files", { method: "POST", credentials: "include", body });
-        if (!response.ok) throw new Error(`${file.name}: ${await readProblem(response, "업로드 실패")}`); done++;
+        const request = { method: "POST", credentials: "include" as const, body };
+        let response = await fetch("/api/admin/drive/files", request);
+        if (response.status === 429) {
+          const retryAfter = response.headers.get("Retry-After");
+          const seconds = retryAfter === null ? 60 : Number(retryAfter);
+          if (Number.isFinite(seconds) && seconds >= 0 && seconds <= 60) {
+            await response.body?.cancel();
+            setMessage("요청 한도에 도달해 잠시 대기한 뒤 업로드를 계속합니다.");
+            await new Promise(resolve => window.setTimeout(resolve, Math.max(1, seconds) * 1000));
+            response = await fetch("/api/admin/drive/files", request);
+          }
+        }
+        if (!response.ok) throw new Error(`${file.name}: ${await readProblem(response, "업로드 실패")}`);
+        done++;
       }
     } catch (reason) { setError(reason instanceof Error ? reason.message : "업로드 실패"); }
     finally { setMessage(`${done}개 파일을 업로드했습니다.`); setBusy(false); if (upload.current) upload.current.value = ""; reload(); }

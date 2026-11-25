@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
-import { getMarkdownHeadings, getVisibleHeadings, remarkHeadingIds } from '../../apps/frontend/src/lib/markdownHeadings.ts';
+import { getMarkdownHeadings, remarkHeadingIds } from '../../apps/frontend/src/lib/markdownHeadings.ts';
+import { getVisibleHeadings } from '../../apps/frontend/src/lib/markdownOutline.ts';
 import { postPath } from '../../apps/frontend/src/lib/postPaths.ts';
 
 test('category paths work for existing posts, moved posts, and uncategorized posts', () => {

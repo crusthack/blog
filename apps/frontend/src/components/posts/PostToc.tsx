@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getVisibleHeadings, type MarkdownHeading } from "@/lib/markdownHeadings";
+import type { MarkdownHeading } from "@/lib/markdownHeadings";
+import { getVisibleHeadings } from "@/lib/markdownOutline";
 
 export function PostToc({ headings }: { headings: MarkdownHeading[] }) {
   const [activeId, setActiveId] = useState("");

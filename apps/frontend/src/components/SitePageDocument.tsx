@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { SitePageArticle } from "./SitePageArticle";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { readProblem } from "@/lib/contracts";
@@ -51,7 +52,7 @@ export function SitePageDocument(props: Props) {
     finally { setBusy(false); }
   }
 
-  return <article className="legacy-home-document post-view" data-view="post">
+  return <SitePageArticle content={editing ? draft : content} actions={<>
     {user?.isOwner && <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
       <button data-ui="action" className="border px-4 py-2" disabled={busy || !props.available} onClick={() => {
         if (editing && dirty && !window.confirm("저장하지 않은 수정을 취소할까요?")) return;
@@ -73,9 +74,7 @@ export function SitePageDocument(props: Props) {
       </fieldset>
       <h2 className="border-t pt-4 font-bold">미리보기</h2>
     </form> : null}
-    <header className="legacy-document-header"><h1>{editing ? draft.title : content.title}</h1>
-      {(editing ? draft.date : content.date) && <time dateTime={editing ? draft.date : content.date}>{editing ? draft.date : content.date}</time>}
-      <p>{editing ? draft.description : content.description}</p></header>
-    <div className="post-view-body"><div className="post-view-markdown"><MarkdownContent source={editing ? draft.markdown : content.markdown} /></div></div>
-  </article>;
+  </>}>
+    <MarkdownContent source={editing ? draft.markdown : content.markdown} />
+  </SitePageArticle>;
 }

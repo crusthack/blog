@@ -100,8 +100,16 @@ export async function buildPages({ origin, pagesUrl, outputDirectory = path.join
     await emit(page + '/view.json', JSON.stringify({title, page}));
   }
   const posts = snapshot.posts.map(({content,assets,...summary}) => summary);
-  const categories = snapshot.categories.map(c => ({...c,postCount:posts.filter(p=>p.categoryId===c.id).length}));
-  await emit('shared.json',JSON.stringify({base,origin,appOrigin,links,posts,categories,externalLinks:snapshot.externalLinks,usefulLinks:snapshot.usefulLinks}));
+  const postCounts = new Map();
+  for (const post of posts) postCounts.set(post.categoryId, (postCounts.get(post.categoryId) ?? 0) + 1);
+  const categories = snapshot.categories.map(category => ({ ...category, postCount: postCounts.get(category.id) ?? 0 }));
+  const newest = [...posts].sort((left, right) =>
+    Date.parse(right.publishedAtUtc ?? right.updatedAtUtc) - Date.parse(left.publishedAtUtc ?? left.updatedAtUtc));
+  const project = categories.find(category => category.name === '프로젝트' || category.slug.toLowerCase() === 'project');
+  const recentProjects = newest.filter(post => (project && post.categoryId === project.id) || post.categoryName === '프로젝트').slice(0, 5);
+  const sidebarPosts = [...new Set([...newest.slice(0, 4), ...recentProjects])];
+  await emit('shared.json', JSON.stringify({ base, origin, appOrigin, links, posts, sidebarPosts, categories,
+    externalLinks: snapshot.externalLinks, usefulLinks: snapshot.usefulLinks }));
   await emit('.nojekyll', '');
   const routes = ['/', '/posts/', '/about/', '/game/', '/markdown/', ...snapshot.categories.map(category => `/categories/${encodeURIComponent(category.slug)}/`), ...snapshot.posts.map(postPath)];
   await emit('sitemap.xml', `<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${routes.map(route => `<url><loc>${escapeHtml(destination.origin + base + route)}</loc></url>`).join('')}</urlset>`);

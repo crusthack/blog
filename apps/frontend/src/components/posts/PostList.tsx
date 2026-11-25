@@ -3,10 +3,11 @@ import { usePublished } from "@/components/PublishedContext";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCategories } from "@/components/categories/CategoriesProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { type Category, type PostSummary, effectivePostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
-import { flattenCategories, groupCategories } from "@/lib/categoryTree";
+import { type PostSummary, effectivePostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
+import { flattenCategories } from "@/lib/categoryTree";
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { postPath } from "@/lib/postPaths";
 
@@ -32,7 +33,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   const Heading = embedded ? "h2" : "h1";
   const [serverTotal, setTotal] = useState(0);
   const [posts, setPosts] = useState<PostSummary[]>([]);
-  const [categories, setCategories] = useState<Category[]>(published?.categories ?? []);
+  const { categories, error: categoryError, isLoading: isCategoriesLoading } = useCategories();
   const [isLoading, setIsLoading] = useState(!published);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
@@ -56,21 +57,14 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
     const controller = new AbortController();
     async function load() {
       try {
-        const [postResponse, categoryResponse] = await Promise.all([
-          fetch(`/api/posts/directory?${new URLSearchParams({ page: String(page), query: search, sort, direction, ...(categorySlug || categoryId ? { category: categorySlug || categoryId, ...(categorySlug ? { includeDescendants: "true" } : {}) } : {}), ...(visibility ? { visibility } : {}), ...(mine ? { mine: "true" } : {}), ...(bookmarked ? { bookmarked: "true" } : {}) })}`, { cache: "no-store", credentials: "include", signal: controller.signal }),
-          fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal }),
-        ]);
+        const postResponse = await fetch(`/api/posts/directory?${new URLSearchParams({ page: String(page), query: search, sort, direction, ...(categorySlug || categoryId ? { category: categorySlug || categoryId, ...(categorySlug ? { includeDescendants: "true" } : {}) } : {}), ...(visibility ? { visibility } : {}), ...(mine ? { mine: "true" } : {}), ...(bookmarked ? { bookmarked: "true" } : {}) })}`, { cache: "no-store", credentials: "include", signal: controller.signal });
         if (!postResponse.ok) throw new Error(await readProblem(postResponse, "글 목록을 불러오지 못했습니다."));
-        if (!categoryResponse.ok) throw new Error(await readProblem(categoryResponse, "카테고리를 불러오지 못했습니다."));
-        const [loadedPosts, loadedCategories] = await Promise.all([
-          postResponse.json() as Promise<{ items: PostSummary[]; total: number }>, categoryResponse.json() as Promise<Category[]>,
-        ]);
+        const loadedPosts = await postResponse.json() as { items: PostSummary[]; total: number };
         if (controller.signal.aborted) return;
         if (page > Math.max(1, Math.ceil(loadedPosts.total / pageSize))) {
           setPage(Math.max(1, Math.ceil(loadedPosts.total / pageSize)));
         }
         setPosts(loadedPosts.items); setTotal(loadedPosts.total); setLoadError("");
-        setCategories(loadedCategories);
       } catch (reason) {
         if (!controller.signal.aborted) setLoadError(reason instanceof Error ? reason.message : "목록을 불러오지 못했습니다.");
       } finally {
@@ -90,24 +84,17 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
   const activeCategory = categories.find((category) => category.slug === categorySlug);
   const parentCategory = activeCategory?.parentId && categories.find(category => category.id === activeCategory.parentId);
   const childCategories = activeCategory ? categories.filter(category => category.parentId === activeCategory.id) : [];
-  const missingCategory = Boolean(categorySlug && !isLoading && !loadError && !activeCategory);
-  const subtree = new Set<string>();
-  if (published && activeCategory) {
-    const children = groupCategories(categories);
-    const pending = [activeCategory];
-    while (pending.length) {
-      const category = pending.pop()!;
-      if (subtree.has(category.slug)) continue;
-      subtree.add(category.slug);
-      pending.push(...(children.get(category.id) ?? []));
-    }
-  }
-  const matches = published?.posts.filter(p => (categorySlug ? subtree.has(p.categorySlug ?? "") : !categoryId || p.categorySlug === categoryId) &&
-    (!search || (p.title + " " + (p.description ?? "")).toLowerCase().includes(search.toLowerCase()))).sort((a,b) => {
-      const order = sort === "title" ? a.title.localeCompare(b.title, "ko") : sort === "priority" ? (a.priority ?? 0) - (b.priority ?? 0) :
-        (sort === "updated" ? a.updatedAtUtc : a.createdAtUtc ?? "").localeCompare(sort === "updated" ? b.updatedAtUtc : b.createdAtUtc ?? "");
-      return (direction === "desc" ? -order : order) || b.postNumber - a.postNumber;
+  const missingCategory = Boolean(categorySlug && !isLoading && !isCategoriesLoading && !loadError && !categoryError && !activeCategory);
+  const matches = useMemo(() => {
+    const term = search.toLowerCase();
+    return published?.posts.filter(post => (!categoryId || post.categorySlug === categoryId) &&
+      (!term || (post.title + " " + (post.description ?? "")).toLowerCase().includes(term))).sort((left, right) => {
+      const order = sort === "title" ? left.title.localeCompare(right.title, "ko")
+        : sort === "priority" ? (left.priority ?? 0) - (right.priority ?? 0)
+        : (sort === "updated" ? left.updatedAtUtc : left.createdAtUtc ?? "").localeCompare(sort === "updated" ? right.updatedAtUtc : right.createdAtUtc ?? "");
+      return (direction === "desc" ? -order : order) || right.postNumber - left.postNumber;
     });
+  }, [published, categoryId, search, sort, direction]);
   const total = matches?.length ?? serverTotal;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = page;
@@ -137,7 +124,7 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
       if (!response.ok) throw new Error(await readProblem(response, "우선순위를 저장하지 못했습니다."));
       setPriorities(values => { const next = { ...values }; delete next[post.postNumber]; return next; });
       setMessage(`“${post.title}” 우선순위를 저장했습니다.`);
-      window.dispatchEvent(new Event(categoriesUpdatedEvent));
+      setReload(value => value + 1);
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : "우선순위를 저장하지 못했습니다.");
       setReload(value => value + 1);
@@ -177,7 +164,6 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
       const response = await fetch(`/api/posts/${post.postNumber}`, { method: "DELETE", credentials: "include" });
       if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
       setPosts((previous) => previous.filter((item) => item.postNumber !== post.postNumber));
-      setReload(value => value + 1);
       setMessage(`“${post.title}” 글을 휴지통으로 옮겼습니다.`);
       window.dispatchEvent(new Event(categoriesUpdatedEvent));
     } catch (reason) {
@@ -252,10 +238,11 @@ function PostDirectory({ categorySlug, manage, mine, bookmarked, embedded, isOwn
       {manage && isOwner ? <p className="board-notice">우선순위는 0~10,000이며 숫자가 클수록 먼저 표시됩니다. 같은 순위는 최신 글순입니다. 값을 바꾼 뒤 저장해 주세요.</p> : null}
       {actionError ? <p className="board-notice board-error" role="alert">{actionError}</p> : null}
       {message ? <p className="board-notice" role="status">{message}</p> : null}
-      {isLoading ? <p className="board-notice" role="status">글 목록을 불러오고 있습니다.</p>
+      {isLoading || (categorySlug && isCategoriesLoading) ? <p className="board-notice" role="status">글 목록을 불러오고 있습니다.</p>
         : loadError ? <div className="board-notice board-error" role="alert">{loadError} <button type="button" onClick={() => {
           setLoadError(""); setIsLoading(true); setReload((value) => value + 1);
         }}>다시 시도</button></div>
+        : categorySlug && categoryError && !activeCategory ? <div className="board-notice board-error" role="alert">{categoryError} <button type="button" onClick={() => window.dispatchEvent(new Event(categoriesUpdatedEvent))}>다시 시도</button></div>
         : missingCategory ? <p className="board-notice" role="alert">존재하지 않는 카테고리입니다.</p>
         : <>
           <div className="board-summary"><span>총 <strong>{total}</strong>개</span><span>{currentPage} / {pageCount} 페이지</span></div>

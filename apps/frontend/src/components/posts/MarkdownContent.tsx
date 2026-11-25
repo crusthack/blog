@@ -1,4 +1,3 @@
-import { usePublished } from "@/components/PublishedContext";
 import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { CodeBlock } from "@/components/posts/CodeBlock";
@@ -62,8 +61,11 @@ const markdownComponents: Components = {
   },
 };
 
-export function MarkdownContent({ source, headingIds = true }: { source: string; headingIds?: boolean }) {
-  const published = usePublished();
+export type MarkdownLinks = { origin: string; appOrigin: string; links: Record<string, string> };
+
+export function MarkdownContent({ source, headingIds = true, published }: {
+  source: string; headingIds?: boolean; published?: MarkdownLinks;
+}) {
   return (
     <div className="content-markdown markdown-body">
       <ReactMarkdown urlTransform={value => {

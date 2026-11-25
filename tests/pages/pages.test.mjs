@@ -49,6 +49,8 @@ test('exports standalone HTML, copied attachments, project base paths and safe M
   assert.equal(shared.links['/posts/7'], '/blog/posts/network/7/');
   assert.equal(view.assets[0].url, '/blog/static/assets/7/' + assetId + '.txt');
   assert.equal(shared.posts[0].content, undefined);
+  assert.deepEqual(shared.sidebarPosts, shared.posts);
+  assert.equal(shared.categories[0].postCount, 1);
   assert.deepEqual(await readFile(path.join(outputDirectory, `static/assets/7/${assetId}.txt`)), f.bytes);
   assert.match(await readFile(path.join(outputDirectory, 'about/view.json'), 'utf8'), /웹에서 저장한 소개/);
   assert.match(await readFile(path.join(outputDirectory, 'sitemap.xml'), 'utf8'), /https:\/\/user.github.io\/blog\/posts\/network\/7\//);
@@ -137,6 +139,25 @@ test('reader sends no cookies, refuses redirects and fails on errors', async () 
   assert.throws(() => createReader('https://user:password@source.example'), /without credentials/);
   const failed = createReader(origin, { interval: 0, fetchImpl: async () => new Response('', { status: 503 }) });
   await assert.rejects(failed('/api/posts'), /503/);
+});
+
+test('the snapshot reader retries a rate-limited request once', async () => {
+  let attempts = 0;
+  const read = createReader(origin, { interval: 1, fetchImpl: async () => {
+    attempts++;
+    if (attempts === 1) return new Response(null, { status: 429, headers: { 'Retry-After': '0' } });
+    return Response.json({ items: [] });
+  } });
+  assert.deepEqual(await read('/api/categories'), { items: [] });
+  assert.equal(attempts, 2);
+
+  attempts = 0;
+  const limited = createReader(origin, { interval: 1, fetchImpl: async () => {
+    attempts++;
+    return new Response(null, { status: 429, headers: { 'Retry-After': '0' } });
+  } });
+  await assert.rejects(limited('/api/categories'), /429/);
+  assert.equal(attempts, 2);
 });
 
 test('only a missing previous manifest is treated as first deployment', async () => {

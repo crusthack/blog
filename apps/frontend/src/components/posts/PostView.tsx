@@ -1,5 +1,5 @@
 "use client";
-import { usePublished } from "@/components/PublishedContext";
+import { PostArticle } from "./PostArticle";
 
 import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { PostDiscussion } from "./PostDiscussion";
@@ -10,12 +10,11 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { BlogFrame } from "@/components/BlogFrame";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { type PostDetail, effectivePostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
+import { type PostDetail, readProblem, visibilityLabels } from "@/lib/contracts";
 import { PostAttachments } from "./PostAttachments";
 import { postPath } from "@/lib/postPaths";
 import { getMarkdownHeadings } from "@/lib/markdownHeadings";
 import { PostToc } from "@/components/posts/PostToc";
-import { PostReadingActions } from "@/components/posts/PostReadingActions";
 import dynamic from "next/dynamic";
 
 const SlideWorkspace = dynamic(() => import("@/components/slides/SlideWorkspace"), { loading: () => <p className="p-10">슬라이드를 준비하고 있습니다.</p> });
@@ -27,11 +26,9 @@ export function PostView({ postNumber, slideMode = false }: { postNumber: string
 }
 
 function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode: boolean }) {
-  const published = usePublished();
-  const AppLink = published ? "a" : Link;
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [post, setPost] = useState<PostDetail | null>(published?.post ?? null);
+  const [post, setPost] = useState<PostDetail | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [error, setError] = useState("");
@@ -43,7 +40,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
   const headings = useMemo(() => post ? getMarkdownHeadings(post.content) : [], [post]);
 
   useEffect(() => {
-    if (published || isAuthLoading) return;
+    if (isAuthLoading) return;
     const controller = new AbortController();
     function normalizePostPath(data: { postNumber: number; categorySlug: string | null }) {
       if (controller.signal.aborted) return;
@@ -80,7 +77,7 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
         setError(reason instanceof Error ? reason.message : "글을 불러오지 못했습니다.");
       });
     return () => controller.abort();
-  }, [isAuthLoading, postNumber, reload, router, slideMode, published]);
+  }, [isAuthLoading, postNumber, reload, router, slideMode]);
 
   async function deletePost() {
     if (!post || deleting || !window.confirm(`“${post.title}” 글을 휴지통으로 옮길까요? 글과 첨부 파일은 보관됩니다.`)) return;
@@ -159,13 +156,10 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
 
   return (
     <BlogFrame rightSidebar={<PostToc headings={headings} />}>
-      <article
-        className="post-view min-h-screen w-full rounded-2xl border border-gray-200 px-4 py-8 shadow-sm dark:border-gray-700 md:p-12"
-        data-view="post"
-      >
-        <header className="mb-8 border-b border-gray-200 pb-7 dark:border-gray-700">
+      <PostArticle post={post}
+        actions={<>
           <div className="mb-4 flex flex-wrap items-center justify-end gap-2 text-xs font-bold">
-            <AppLink href={`${published?.appOrigin ?? ""}${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</AppLink>
+            <Link href={`${postPath(post)}/slides`} className="post-slide-link">슬라이드로 보기</Link>
             {post.canEdit ? (
               <>
               <Link
@@ -180,41 +174,12 @@ function PostContent({ postNumber, slideMode }: { postNumber: string; slideMode:
             ) : null}
           </div>
           {deleteError && <p role="alert" className="mb-4 text-red-600">{deleteError}</p>}
-          {post.categoryName && post.categorySlug && (
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold">
-              <Link href={`/categories/${encodeURIComponent(post.categorySlug)}`} className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                {post.categoryName}
-              </Link>
-            </div>
-          )}
-          <h1 id="post-title" tabIndex={-1} className="text-[clamp(2.375rem,4vw,3.5rem)] leading-tight font-black tracking-tight">{post.title}</h1>
-          {post.description ? (
-            <p className="mt-4 text-xl leading-relaxed md:text-2xl text-gray-600 dark:text-gray-300">{post.description}</p>
-          ) : null}
-          <div className="mt-5 flex flex-wrap gap-x-4 gap-y-2 text-base text-gray-500">
-            <span>공개 범위 · {visibilityLabels[effectivePostVisibility(post)]}{post.categoryIsHidden && " (카테고리 숨김)"}</span>
-            {post.authorName && <span>작성자 {post.authorName}</span>}
-            <time dateTime={post.createdAtUtc}>작성 {formatDate(post.createdAtUtc)}</time>
-            <time dateTime={post.updatedAtUtc}>수정 {formatDate(post.updatedAtUtc)}</time>
-          </div>
-          <PostAttachments key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} isOwner={Boolean(user?.isOwner)} />
-        </header>
-        <div className="post-view-body">
-          <div className="post-view-markdown rounded-md py-4 md:p-6">
-            <MarkdownContent source={post.content} />
-          </div>
-        </div>
-        <PostReadingActions categorySlug={post.categorySlug} />
-        {published ? <div data-live-comments /> : <PostDiscussion key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} />}
-      </article>
+        </>}
+        attachments={<PostAttachments key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} isOwner={Boolean(user?.isOwner)} />}
+        discussion={<PostDiscussion key={`${post.postNumber}:${user?.id ?? "visitor"}`} postNumber={post.postNumber} />}
+      >
+        <MarkdownContent source={post.content} />
+      </PostArticle>
     </BlogFrame>
   );
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("ko-KR", {
-    dateStyle: "long",
-    timeStyle: "short",
-    timeZone: "Asia/Seoul",
-  }).format(new Date(value));
 }

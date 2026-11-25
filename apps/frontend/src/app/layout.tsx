@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { SiteFooter } from "@/components/SiteFooter";
+import { CategoriesProvider } from "@/components/categories/CategoriesProvider";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SetupGuard } from "@/components/setup/SetupGuard";
 import "./globals.css";
@@ -19,9 +20,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="antialiased">
         <SetupGuard>
           <AuthProvider>
-            <SiteHeader />
-            {children}
-            <SiteFooter />
+            <CategoriesProvider>
+              <SiteHeader />
+              {children}
+              <SiteFooter />
+            </CategoriesProvider>
           </AuthProvider>
         </SetupGuard>
       </body>

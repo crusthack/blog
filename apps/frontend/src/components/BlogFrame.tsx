@@ -3,8 +3,9 @@ import { usePublished } from "@/components/PublishedContext";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCategories } from "@/components/categories/CategoriesProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { readProblem, type Category, type PostSummary } from "@/lib/contracts";
+import { readProblem, type PostSummary } from "@/lib/contracts";
 import { SidebarCategories } from "@/components/categories/SidebarCategories";
 import { usefulLinksUpdatedEvent } from "@/lib/uiEvents";
 import { defaultUsefulLinks, type ExternalLink } from "@/lib/siteLinks";
@@ -13,8 +14,10 @@ import { postPath } from "@/lib/postPaths";
 export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rightSidebar?: ReactNode }) {
   const published = usePublished();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [categories, setCategories] = useState<Category[]>(published?.categories ?? []);
-  const [posts, setPosts] = useState<PostSummary[]>(published?.posts ?? []);
+  const { categories, error: categoryError, isLoading: isCategoriesLoading } = useCategories();
+  const projectCategory = categories.find(category => category.name === "프로젝트" || category.slug.toLowerCase() === "project");
+  const projectSlug = projectCategory?.slug;
+  const [posts, setPosts] = useState<PostSummary[]>(published?.sidebarPosts ?? []);
   const [isLoading, setIsLoading] = useState(!published);
   const [error, setError] = useState("");
   const [usefulLinks, setUsefulLinks] = useState<ExternalLink[]>(published?.usefulLinks ?? defaultUsefulLinks);
@@ -34,10 +37,8 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
     };
   }, [published, rightSidebar]);
 
-
-
   useEffect(() => {
-    if (published || isAuthLoading) return;
+    if (published || isAuthLoading || isCategoriesLoading) return;
 
     const controller = new AbortController();
     let active = true;
@@ -45,27 +46,14 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
       setIsLoading(true);
       setError("");
 
-      void Promise.all([
-        fetchCollection<Category>(
-          "/api/categories",
-          "카테고리를 불러오지 못했습니다.",
-          controller.signal,
-        ),
-        fetchCollection<PostSummary>(
-          "/api/posts/directory?sort=newest",
-          "글 목록을 불러오지 못했습니다.",
-          controller.signal,
-        ),
-      ])
-        .then(async ([nextCategories, nextPosts]) => {
-          const project = nextCategories.find(category => category.name === "프로젝트" || category.slug.toLowerCase() === "project");
-          if (project) {
-            const projectItems = await fetchCollection<PostSummary>(`/api/posts/directory?sort=newest&category=${encodeURIComponent(project.slug)}`, "프로젝트를 불러오지 못했습니다.", controller.signal);
-            nextPosts = [...new Map([...nextPosts, ...projectItems].map(post => [post.postNumber, post])).values()];
-          }
+      const recent = fetchCollection<PostSummary>("/api/posts/directory?sort=newest", "글 목록을 불러오지 못했습니다.", controller.signal);
+      const projects = projectSlug
+        ? fetchCollection<PostSummary>(`/api/posts/directory?sort=newest&category=${encodeURIComponent(projectSlug)}`, "프로젝트를 불러오지 못했습니다.", controller.signal)
+        : Promise.resolve([]);
+      void Promise.all([recent, projects])
+        .then(([recentItems, projectItems]) => {
           if (!active) return;
-          setCategories(nextCategories);
-          setPosts(nextPosts);
+          setPosts([...new Map([...recentItems, ...projectItems].map(post => [post.postNumber, post])).values()]);
         })
         .catch((reason: unknown) => {
           if (!active || isAbortError(reason)) return;
@@ -81,17 +69,13 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [isAuthLoading, user, published]);
+  }, [isAuthLoading, isCategoriesLoading, user, published, projectSlug]);
 
   const recentPosts = useMemo(
     () => [...posts].sort(compareNewest).slice(0, 4),
     [posts],
   );
   const projectPosts = useMemo(() => {
-    const projectCategory = categories.find(
-      (category) => category.name === "프로젝트" || category.slug.toLowerCase() === "project",
-    );
-
     return [...posts]
       .filter(
         (post) =>
@@ -100,7 +84,7 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
       )
       .sort(compareNewest)
       .slice(0, 5);
-  }, [categories, posts]);
+  }, [projectCategory, posts]);
 
   return (
     <main className={`legacy-blog-frame${rightSidebar !== undefined ? " legacy-blog-frame-post" : ""}`}>
@@ -115,7 +99,7 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
 
         <section>
           <h2>카테고리 목록</h2>
-          {isLoading ? (
+          {isCategoriesLoading ? (
             <p>불러오는 중…</p>
           ) : categories.length > 0 ? (
             <SidebarCategories categories={categories} />
@@ -124,7 +108,7 @@ export function BlogFrame({ children, rightSidebar }: { children: ReactNode; rig
           )}
         </section>
 
-        {error ? <p role="alert">{error}</p> : null}
+        {error || categoryError ? <p role="alert">{error || categoryError}</p> : null}
       </aside>
 
       <aside className="legacy-blog-sidebar legacy-blog-sidebar-right" aria-label={rightSidebar !== undefined ? "포스트 탐색" : "프로젝트와 참고 링크"}>

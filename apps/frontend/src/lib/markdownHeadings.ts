@@ -42,15 +42,3 @@ const parser = unified().use(remarkParse).use(remarkGfm);
 export function getMarkdownHeadings(source: string): MarkdownHeading[] {
   return assignHeadings(parser.parse(source));
 }
-
-export function getVisibleHeadings(headings: MarkdownHeading[], activeId: string): MarkdownHeading[] {
-  const byId = new Map(headings.map((heading) => [heading.id, heading]));
-  const activePath = new Set<string>();
-  let current: MarkdownHeading | undefined = byId.get(activeId) ?? headings[0];
-  while (current) {
-    activePath.add(current.id);
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  return headings.filter((heading) => heading.parentId === null || activePath.has(heading.id)
-    || activePath.has(heading.parentId));
-}

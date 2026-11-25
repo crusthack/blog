@@ -7,6 +7,7 @@ import {
   useState,
   type DragEvent,
 } from "react";
+import { usePublished } from "@/components/PublishedContext";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 
 const MAX_SOURCE_LENGTH = 500_000;
@@ -89,6 +90,7 @@ function isMarkdownFile(file: File) {
 }
 
 export function MarkdownPreviewWorkbench() {
+  const published = usePublished();
   const [source, setSource] = useState(SAMPLE_MARKDOWN);
   const [previewSource, setPreviewSource] = useState(SAMPLE_MARKDOWN);
   const [fileName, setFileName] = useState("sample.md");
@@ -324,7 +326,7 @@ export function MarkdownPreviewWorkbench() {
               </header>
               <div className="post-view-body">
                 <div className="post-view-markdown p-1 sm:p-3">
-                  <MarkdownContent source={preview.content} />
+                  <MarkdownContent source={preview.content} published={published?.markdownLinks} />
                 </div>
               </div>
             </article>

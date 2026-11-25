@@ -21,17 +21,30 @@ export function createReader(origin, { interval = 650, fetchImpl = fetch } = {})
   return async function read(path, binary = false) {
     const url = new URL(path, base);
     if (url.origin !== base.origin || !url.pathname.startsWith('/api/')) throw new Error('Invalid export API URL.');
-    await delay(Math.max(0, nextRequest - Date.now()));
-    nextRequest = Date.now() + interval;
     let response;
+    let retriedRateLimit = false;
     for (let attempt = 0; ; attempt++) {
+      await delay(Math.max(0, nextRequest - Date.now()));
+      nextRequest = Date.now() + interval;
       response = await fetchImpl(url, {
-      redirect: 'error', credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(60000),
-      headers: { Accept: binary ? '*/*' : 'application/json' },
-    });
-      if (![502, 503, 504, 521, 522, 524].includes(response.status) || attempt >= 4 || interval === 0) break;
-      await response.body?.cancel();
-      await delay(2000 * 2 ** attempt);
+        redirect: 'error', credentials: 'omit', cache: 'no-store', signal: AbortSignal.timeout(60000),
+        headers: { Accept: binary ? '*/*' : 'application/json' },
+      });
+      if (interval === 0 || attempt >= 4) break;
+      if (response.status === 429 && !retriedRateLimit) {
+        const retryAfter = response.headers.get('Retry-After');
+        const wait = retryAfter === null ? 60000
+          : /^\d+$/.test(retryAfter) ? Number(retryAfter) * 1000 : Date.parse(retryAfter) - Date.now();
+        if (!Number.isFinite(wait) || wait > 60000) break;
+        retriedRateLimit = true;
+        await response.body?.cancel();
+        await delay(Math.max(0, wait));
+      } else if ([502, 503, 504, 521, 522, 524].includes(response.status)) {
+        await response.body?.cancel();
+        await delay(2000 * 2 ** attempt);
+      } else {
+        break;
+      }
     }
     if (!response.ok) throw new Error(`Source returned ${response.status}: ${url.pathname}`);
     return binary ? Buffer.from(await response.arrayBuffer()) : response.json();
@@ -45,6 +58,7 @@ export function publicPost(post) {
 export async function collectSnapshot(read) {
   const categories = (await read('/api/categories')).filter(item => item.isVisible === true)
     .map(({ postCount, ...category }) => category).sort((a, b) => a.id.localeCompare(b.id));
+  const categoryIds = new Set(categories.map(category => category.id));
   const summaries = [];
   let expectedTotal;
   for (let page = 1; ; page++) {
@@ -62,7 +76,7 @@ export async function collectSnapshot(read) {
     if (!publicPost(summary)) throw new Error('Non-public post returned by public filter.');
     const post = await read(`/api/posts/${summary.postNumber}`);
     if (!publicPost(post) || post.postNumber !== summary.postNumber || post.updatedAtUtc !== summary.updatedAtUtc || post.revision !== summary.revision) throw new Error('Post changed during export.');
-    if (post.categoryId && !categories.some(category => category.id === post.categoryId)) throw new Error('Missing public category.');
+    if (post.categoryId && !categoryIds.has(post.categoryId)) throw new Error('Missing public category.');
     const assets = await read(`/api/posts/${post.postNumber}/assets/downloads`);
     if (!Array.isArray(assets)) throw new Error('Invalid attachment response.');
     posts.push({ ...post, priority: summary.priority, assets: assets.sort((a, b) => a.id.localeCompare(b.id)) });

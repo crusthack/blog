@@ -140,7 +140,9 @@ public sealed class PostAccessTests
         Assert.Equal(HttpStatusCode.Forbidden, (await raw.SendAsync(crossPost)).StatusCode);
         for (var attempt = 0; attempt < 9; attempt++)
             Assert.Equal(HttpStatusCode.BadRequest, (await Unlock(visitor, post, "wrong-code")).StatusCode);
-        Assert.Equal(HttpStatusCode.TooManyRequests, (await Unlock(visitor, post, "shared-code")).StatusCode);
+        var limited = await Unlock(visitor, post, "shared-code");
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.InRange(limited.Headers.RetryAfter?.Delta ?? TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(15));
     }
 
     [Theory]

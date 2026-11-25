@@ -2,47 +2,64 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCategories } from "@/components/categories/CategoriesProvider";
+import { categoriesUpdatedEvent } from "@/lib/uiEvents";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { MarkdownContent } from "@/components/posts/MarkdownContent";
 import { PostAssetManager } from "@/components/posts/PostAssetManager";
 import { postPath } from "@/lib/postPaths";
 import { flattenCategories } from "@/lib/categoryTree";
 import { insertMarkdown as applyMarkdown, markdownTools } from "@/lib/markdownEditing";
-import { type Category, type PostDetail, type PostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
+import { type PostDetail, type PostVisibility, readProblem, visibilityLabels } from "@/lib/contracts";
 
 const initialContent = "# 새 글\n\nMarkdown으로 내용을 작성하세요.";
 
 export function PostEditor({ postNumber, initialCategory }: { postNumber?: string; initialCategory?: string }) {
+  const { categories, isLoading } = useCategories();
+  if (!postNumber && initialCategory && isLoading) {
+    return <main className="mx-auto max-w-7xl p-10 text-gray-500 dark:text-gray-400">편집기를 준비하고 있습니다.</main>;
+  }
+  const initialCategoryId = !postNumber && initialCategory
+    ? categories.find(item => item.slug === initialCategory || item.id === initialCategory)?.id
+    : undefined;
+  return <PostEditorForm postNumber={postNumber} initialCategory={initialCategory} initialCategoryId={initialCategoryId} />;
+}
+
+function PostEditorForm({ postNumber, initialCategory, initialCategoryId }: {
+  postNumber?: string; initialCategory?: string; initialCategoryId?: string;
+}) {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
   const [revision, setRevision] = useState(1);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [content, setContent] = useState(initialContent);
-  const [categoryId, setCategoryId] = useState("");
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryId, setCategoryId] = useState(initialCategoryId ?? "");
+  const { categories, error: categoryError } = useCategories();
   const [originalHiddenCategoryId, setOriginalHiddenCategoryId] = useState<string | null>(null);
   const selectedCategory = categories.find(category => category.id === categoryId);
   const categoryIsHidden = selectedCategory ? !selectedCategory.isVisible : categoryId === originalHiddenCategoryId;
   const [visibility, setVisibility] = useState<PostVisibility>("Private");
   const [accessCode, setAccessCode] = useState("");
   const [hasAccessCode, setHasAccessCode] = useState(false);
-  const [isLoading, setIsLoading] = useState(Boolean(postNumber || initialCategory));
+  const [isLoading, setIsLoading] = useState(Boolean(postNumber));
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(!postNumber && initialCategory && !initialCategoryId && !categoryError
+    ? "선택한 카테고리를 찾을 수 없습니다. 다른 카테고리를 선택해 주세요."
+    : "");
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const savingRef = useRef(false);
   const leavingRef = useRef(false);
-  const categoryInitializedRef = useRef(false);
   const [view, setView] = useState("split");
   const [pendingLink, setPendingLink] = useState<string | null>(null);
   const leaveDialogRef = useRef<HTMLDialogElement>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const snapshot = JSON.stringify([title, description, content, categoryId, visibility, accessCode]);
-  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(["", "", initialContent, "", "Private", ""]));
-  const dirty = !isLoading && !loadFailed && snapshot !== savedSnapshot;
+  const [savedSnapshot, setSavedSnapshot] = useState(JSON.stringify(["", "", initialContent, initialCategoryId ?? "", "Private", ""]));
+  const cannotSave = loadFailed || Boolean(!postNumber && initialCategory && categoryError);
+  const dirty = !isLoading && !cannotSave && snapshot !== savedSnapshot;
 
   useEffect(() => {
     if (pendingLink) leaveDialogRef.current?.showModal();
@@ -54,7 +71,7 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
     function shortcut(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
-        if (!isLoading && !loadFailed && !isDeleting && !savingRef.current) formRef.current?.requestSubmit();
+        if (!isLoading && !cannotSave && !isDeleting && !savingRef.current) formRef.current?.requestSubmit();
       }
     }
     function beforeUnload(event: BeforeUnloadEvent) {
@@ -77,7 +94,7 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("click", followLink, true);
     };
-  }, [dirty, isLoading, loadFailed, isDeleting, user]);
+  }, [dirty, isLoading, cannotSave, isDeleting, user]);
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -123,39 +140,9 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
     return () => controller.abort();
   }, [isAuthLoading, postNumber, router, user]);
 
-  useEffect(() => {
-    if (!user) return;
-    const controller = new AbortController();
-    void fetch("/api/categories", { cache: "no-store", credentials: "include", signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(await readProblem(response, "카테고리를 불러오지 못했습니다."));
-        return (await response.json()) as Category[];
-      })
-      .then((items) => {
-        if (controller.signal.aborted) return;
-        setCategories(items);
-        if (!postNumber && initialCategory && !categoryInitializedRef.current) {
-          categoryInitializedRef.current = true;
-          const selected = items.find(item => item.slug === initialCategory || item.id === initialCategory);
-          const selectedId = selected?.id ?? "";
-          setCategoryId(selectedId);
-          setSavedSnapshot(JSON.stringify(["", "", initialContent, selectedId, "Private", ""]));
-          if (!selected) setError("선택한 카테고리를 찾을 수 없습니다. 다른 카테고리를 선택해 주세요.");
-        }
-      })
-      .catch((reason: unknown) => {
-        if (!(reason instanceof DOMException && reason.name === "AbortError")) {
-          if (!postNumber && initialCategory) setLoadFailed(true);
-          setError(reason instanceof Error ? reason.message : "카테고리를 불러오지 못했습니다.");
-        }
-      })
-      .finally(() => { if (!controller.signal.aborted && !postNumber && initialCategory) setIsLoading(false); });
-    return () => controller.abort();
-  }, [user, postNumber, initialCategory]);
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (savingRef.current || isDeleting || loadFailed) return;
+    if (savingRef.current || isDeleting || cannotSave) return;
     savingRef.current = true;
     setIsSaving(true);
     setError("");
@@ -174,6 +161,7 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
       leavingRef.current = true;
       setSavedSnapshot(snapshot);
       router.push(postPath(saved));
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
       router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "글을 저장하지 못했습니다.");
@@ -233,6 +221,7 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
       if (!response.ok) throw new Error(await readProblem(response, "글을 삭제하지 못했습니다."));
       leavingRef.current = true;
       router.replace("/");
+      window.dispatchEvent(new Event(categoriesUpdatedEvent));
       router.refresh();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "글을 삭제하지 못했습니다.");
@@ -284,16 +273,16 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
             className="bg-emerald-600 px-5 py-3 font-bold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
             type="submit"
             form="post-editor"
-            disabled={isSaving || isDeleting || loadFailed}
+            disabled={isSaving || isDeleting || cannotSave}
           >
             {isSaving ? "저장 중..." : postNumber ? "수정 저장" : visibility === "Private" ? "비공개로 저장" : "게시하기"}
           </button>
         </div>
       </header>
 
-      {error ? (
+      {error || categoryError ? (
         <p role="alert" data-ui="notice" className="editor-error bg-red-50 p-4 text-sm font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-300">
-          {error}
+          {error || categoryError}
         </p>
       ) : null}
 
@@ -303,7 +292,7 @@ export function PostEditor({ postNumber, initialCategory }: { postNumber?: strin
         <span>{content.length.toLocaleString("ko-KR")}자 · {content.split("\n").length}줄</span>
       </div>
       <div className="editor-workspace" data-view={view}>
-        <div className="editor-input-pane min-w-0 space-y-6" inert={isSaving || isDeleting || loadFailed}>
+        <div className="editor-input-pane min-w-0 space-y-6" inert={isSaving || isDeleting || cannotSave}>
           <form
             data-ui="panel"
             id="post-editor"
